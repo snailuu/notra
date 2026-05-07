@@ -5,8 +5,8 @@
 // "local" marketplace in known_marketplaces.json, causing:
 //   "Plugin 'pk' not found in marketplace 'local'"
 // Use the standard /plugin commands instead:
-//   /plugin marketplace add <repo>/.agents/plugins
-//   /plugin install notra@notra
+//   /plugin marketplace add <repo>
+//   /plugin install notra@snailuu
 
 import fs from "node:fs/promises";
 import os from "node:os";

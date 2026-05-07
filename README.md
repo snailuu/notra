@@ -146,19 +146,19 @@ npm run codex:uninstall
 
 ```bash
 /plugin marketplace add <repository-root>
-/plugin install notra@notra
+/plugin install notra@snailuu
 ```
 
 例如：
 
 ```bash
 /plugin marketplace add /path/to/notra
-/plugin install notra@notra
+/plugin install notra@snailuu
 ```
 
 该命令会：
 
-- 注册 `notra` marketplace。
+- 注册 `snailuu` marketplace。
 - 从 marketplace 安装 `notra` 插件。
 - 在 `~/.claude/plugins/installed_plugins.json` 注册 notra 插件。
 - 在 `~/.claude/settings.json` 的 `enabledPlugins` 中启用 notra 插件。
@@ -180,13 +180,13 @@ notra-serve
 升级当前仓库后，重新执行：
 
 ```bash
-/plugin update notra@notra
+/plugin update notra@snailuu
 ```
 
 卸载：
 
 ```bash
-/plugin uninstall notra@notra
+/plugin uninstall notra@snailuu
 ```
 
 ### 5. 初始化目标项目
@@ -275,7 +275,7 @@ notra-serve
 
 ```bash
 /plugin marketplace add <repository-root>
-/plugin install notra@notra
+/plugin install notra@snailuu
 ```
 
 安装后需要**完全重启 Claude Code**。
@@ -283,7 +283,7 @@ notra-serve
 卸载：
 
 ```bash
-/plugin uninstall notra@notra
+/plugin uninstall notra@snailuu
 ```
 
 ## 常用流程
