@@ -1,0 +1,37 @@
+{
+  "name": "notra",
+  "version": "0.1.16",
+  "description": "Project knowledge skills for Codex.",
+  "author": {
+    "name": "snailuu"
+  },
+  "license": "MIT",
+  "keywords": [
+    "project-knowledge",
+    "knowledge-graph",
+    "codex-plugin-skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Notra",
+    "shortDescription": "Project knowledge skills",
+    "longDescription": "Expose the notra:notra-init, notra:notra-preflight, notra:notra-status, notra:notra-graph, notra:notra-crystallize, notra:notra-auto-crystallize, notra:notra-lint, notra:notra-govern, and notra:notra-serve skills for the local project knowledge workflow.",
+    "developerName": "snailuu",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use the `notra:notra-init` skill to initialize `.notra/` for the current project.",
+      "Use the `notra:notra-preflight` skill before implementation to retrieve matching practices or local evidence hints.",
+      "Use the `notra:notra-status` skill to summarize the current project knowledge state.",
+      "Use the `notra:notra-crystallize` skill to persist stable knowledge from the current session.",
+      "Use the `notra:notra-auto-crystallize` skill after task completion to infer adopted practices or incubating candidates from the task and touched files.",
+      "Use the `notra:notra-lint` skill to inspect recommendation-pool lifecycle governance, evidence health, and possible duplicates.",
+      "Use the `notra:notra-govern` skill to automatically apply reversible project knowledge governance actions."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "notra",
+  "description": "Notra marketplace for Claude Code",
+  "owner": {
+    "name": "snailuu"
+  },
+  "plugins": [
+    {
+      "name": "notra",
+      "description": "Project knowledge skills for Claude Code.",
+      "version": "0.1.16",
+      "author": {
+        "name": "snailuu"
+      },
+      "source": "./plugins/notra",
+      "category": "Productivity"
+    }
+  ]
+}
