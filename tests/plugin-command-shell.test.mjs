@@ -21,7 +21,7 @@ test("repository exposes a local Codex marketplace for the notra plugin", () => 
   assert.equal(fs.existsSync(marketplacePath), true);
   const marketplace = JSON.parse(fs.readFileSync(marketplacePath, "utf8"));
 
-  assert.equal(marketplace.name, "notra");
+  assert.equal(marketplace.name, "snailuu");
   assert.equal(marketplace.interface.displayName, "Notra");
   assert.equal(Array.isArray(marketplace.plugins), true);
 

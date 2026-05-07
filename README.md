@@ -189,9 +189,33 @@ notra-serve
 /plugin uninstall notra@snailuu
 ```
 
-### 5. 初始化目标项目
+### 5. 通过 npm CLI 初始化 Agent 配置
 
-安装工具后，还需要对目标项目执行初始化：
+Claude Code 推荐使用 `/plugin` 安装。Codex 或通用 `.agents/skills/` 生态可以通过 npm CLI 初始化：
+
+```bash
+npm install -g notra
+cd your-project
+notra init --codex
+```
+
+也可以一次写入多个平台配置：
+
+```bash
+notra init --claude --codex --agents
+```
+
+该命令会把 notra 运行脚本写入 `.notra/plugin/`，并把 skill 写入对应平台目录：
+
+```text
+.claude/skills/
+.codex/skills/
+.agents/skills/
+```
+
+### 6. 初始化目标项目知识库
+
+安装工具后，还需要对目标项目执行知识库初始化：
 
 ```bash
 npm run notra:init -- <project-root>
