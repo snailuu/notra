@@ -18,6 +18,7 @@
     "build": "node knowledge/tools/build-graph-data.mjs",
     "codex:install": "node scripts/install-codex-local-plugin.mjs",
     "codex:uninstall": "node scripts/install-codex-local-plugin.mjs uninstall",
+    "publish": "pnpm pack && pnpm link --global",
     "notra:init": "node scripts/init-project-knowledge.mjs",
     "notra:preflight": "node scripts/preflight-session.mjs",
     "notra:status": "node scripts/status-report.mjs",

@@ -90,12 +90,12 @@ npm test
 
 ### 2. 作为普通 CLI 使用
 
-不安装 Codex plugin 也可以直接通过 npm 脚本使用：
+不安装 Codex plugin 也可以直接通过 `notra` CLI 使用：
 
 ```bash
-npm run notra:init -- <project-root>
-npm run notra:preflight -- <project-root> "实现 HTTP 调用"
-npm run notra:auto-crystallize -- <project-root> <auto-crystallize-input.json>
+notra project-init <project-root>
+notra preflight <project-root> "实现 HTTP 调用"
+notra auto-crystallize <project-root> <auto-crystallize-input.json>
 ```
 
 这种方式适合手动执行脚本，或者在其它自动化流程里调用。
@@ -218,7 +218,7 @@ notra init --claude --codex --agents
 安装工具后，还需要对目标项目执行知识库初始化：
 
 ```bash
-npm run notra:init -- <project-root>
+notra project-init <project-root>
 ```
 
 或者在 Codex 中使用：
@@ -231,23 +231,36 @@ notra:notra-init
 
 ## 快速开始
 
-初始化后，可以直接用 npm 脚本操作：
+初始化后，可以直接用 `notra` CLI 操作：
 
 ```bash
-npm test
-npm run notra:init -- <project-root>
-npm run notra:preflight -- <project-root> "实现 HTTP 调用"
-npm run notra:auto-crystallize -- <project-root> <auto-crystallize-input.json>
-npm run notra:lint -- <project-root>
-npm run notra:govern -- <project-root>
-npm run notra:serve -- <project-root> 8124
+notra project-init <project-root>
+notra preflight <project-root> "实现 HTTP 调用"
+notra auto-crystallize <project-root> <auto-crystallize-input.json>
+notra lint <project-root>
+notra govern <project-root>
+notra serve <project-root> 8124
 ```
 
-如果命令不传 `<project-root>`，脚本会使用当前工作目录。
+如果命令不传 `<project-root>`，CLI 会使用当前工作目录。
 
 ## 技能包
 
 仓库同时内置 Codex plugin 技能包与 Claude Code 技能包。
+
+### 使用场景
+
+- `notra-init`：首次为当前项目创建 `.notra/` 知识库时使用。
+- `notra-preflight`：开始开发任务前使用，用来查找匹配的实践、推荐方案和本地 evidence hints。
+- `notra-status`：只读查看当前项目知识库状态、稳定/孵化节点数量和最近 session 时使用。
+- `notra-graph`：需要重新生成 `.notra/graph/` 图谱数据和页面资源时使用。
+- `notra-crystallize`：明确知道要记录 session、采纳节点、创建候选节点或更新稳定知识时使用。
+- `notra-auto-crystallize`：任务结束后，根据任务描述、变更文件和推荐命中自动推断知识沉淀时使用。
+- `notra-lint`：只读检查推荐池、证据覆盖、重复节点和知识一致性问题时使用。
+- `notra-govern`：自动执行可逆治理动作时使用，例如转正孵化节点、打回推荐池外方案或标记重复节点。
+- `notra-serve`：本地预览项目知识图谱页面时使用。
+
+Codex 中技能名带 `notra:` 前缀，例如 `notra:notra-init`；Claude Code 中直接使用 `notra-init`。
 
 ### Codex 技能
 
@@ -315,7 +328,7 @@ notra-serve
 ### 1. 初始化项目知识库
 
 ```bash
-npm run notra:init -- <project-root>
+notra project-init <project-root>
 ```
 
 会在目标项目中创建 `.notra/`，包括：
@@ -337,7 +350,7 @@ npm run notra:init -- <project-root>
 ### 2. 任务开始前预检
 
 ```bash
-npm run notra:preflight -- <project-root> "实现 HTTP 调用"
+notra preflight <project-root> "实现 HTTP 调用"
 ```
 
 预检会优先查 `.notra/`：
@@ -355,7 +368,7 @@ npm run notra:preflight -- <project-root> "实现 HTTP 调用"
 ### 3. 任务结束后自动沉淀
 
 ```bash
-npm run notra:auto-crystallize -- <project-root> <auto-crystallize-input.json>
+notra auto-crystallize <project-root> <auto-crystallize-input.json>
 ```
 
 输入示例：
@@ -381,7 +394,7 @@ npm run notra:auto-crystallize -- <project-root> <auto-crystallize-input.json>
 ### 4. 手动结晶
 
 ```bash
-npm run notra:crystallize -- <project-root> <crystallize-input.json>
+notra crystallize <project-root> <crystallize-input.json>
 ```
 
 模板位于：
@@ -395,7 +408,7 @@ templates/crystallize-input-template.json
 ### 5. 检查知识库健康
 
 ```bash
-npm run notra:lint -- <project-root>
+notra lint <project-root>
 ```
 
 会报告：
@@ -411,7 +424,7 @@ npm run notra:lint -- <project-root>
 ### 6. 自动治理
 
 ```bash
-npm run notra:govern -- <project-root>
+notra govern <project-root>
 ```
 
 自动治理只做可逆操作：
@@ -424,7 +437,7 @@ npm run notra:govern -- <project-root>
 ### 7. 查看图谱
 
 ```bash
-npm run notra:serve -- <project-root> 8124
+notra serve <project-root> 8124
 ```
 
 也可以在初始化后的项目里双击：

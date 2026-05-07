@@ -108,6 +108,52 @@ test("notra CLI exposes version and init", async () => {
   assert.equal(await exists(path.join(projectRoot, ".codex", "skills", "notra-init", "SKILL.md")), true);
 });
 
+test("notra CLI runs project knowledge subcommands", async () => {
+  const projectRoot = await createSampleProject();
+
+  const init = await execFileAsync(process.execPath, [cliPath, "project-init", projectRoot]);
+  const initPayload = JSON.parse(init.stdout);
+  assert.equal(initPayload.projectRoot, projectRoot);
+  assert.equal(await exists(path.join(projectRoot, ".notra", "project-profile.md")), true);
+
+  const status = await execFileAsync(process.execPath, [cliPath, "status", projectRoot]);
+  const statusPayload = JSON.parse(status.stdout);
+  assert.equal(statusPayload.knowledgeRoot, path.join(projectRoot, ".notra"));
+
+  const preflight = await execFileAsync(process.execPath, [
+    cliPath,
+    "preflight",
+    projectRoot,
+    "实现 HTTP 调用"
+  ]);
+  const preflightPayload = JSON.parse(preflight.stdout);
+  assert.notEqual(preflightPayload.mode, "no-knowledge");
+
+  const graph = await execFileAsync(process.execPath, [cliPath, "graph", projectRoot]);
+  const graphPayload = JSON.parse(graph.stdout);
+  assert.equal(graphPayload.output.data, "graph/graph-data.json");
+
+  const lint = await execFileAsync(process.execPath, [cliPath, "lint", projectRoot]);
+  const lintPayload = JSON.parse(lint.stdout);
+  assert.equal(typeof lintPayload.summary.issue_count, "number");
+});
+
+async function createSampleProject() {
+  const projectRoot = await createTempProject();
+  await fs.mkdir(path.join(projectRoot, "src"), { recursive: true });
+  await fs.writeFile(
+    path.join(projectRoot, "package.json"),
+    `${JSON.stringify({ name: "sample-project", type: "module" }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(projectRoot, "src", "client.js"),
+    "export async function request(url) { return fetch(url); }\n",
+    "utf8"
+  );
+  return projectRoot;
+}
+
 async function createTempProject() {
   return await fs.mkdtemp(path.join(os.tmpdir(), "notra-cli-test-"));
 }
