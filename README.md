@@ -145,11 +145,11 @@ npm run codex:uninstall
 在 Claude Code 对话中直接使用 notra 技能：
 
 ```bash
-/plugin marketplace add <repository-root>
+/plugin marketplace add snailuu/notra
 /plugin install notra@snailuu
 ```
 
-例如：
+本地开发调试时，也可以使用仓库本地路径：
 
 ```bash
 /plugin marketplace add /path/to/notra
@@ -274,7 +274,7 @@ notra-serve
 推荐安装方式：
 
 ```bash
-/plugin marketplace add <repository-root>
+/plugin marketplace add snailuu/notra
 /plugin install notra@snailuu
 ```
 
