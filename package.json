@@ -1,5 +1,5 @@
 {
-  "name": "notra",
+  "name": "@snailuu/notra",
   "description": "LLM Wiki For Code",
   "version": "0.1.0",
   "type": "module",
@@ -14,11 +14,15 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "node knowledge/tools/build-graph-data.mjs",
     "codex:install": "node scripts/install-codex-local-plugin.mjs",
     "codex:uninstall": "node scripts/install-codex-local-plugin.mjs uninstall",
-    "publish": "pnpm pack && pnpm link --global",
+    "publish": "pnpm publish",
     "notra:init": "node scripts/init-project-knowledge.mjs",
     "notra:preflight": "node scripts/preflight-session.mjs",
     "notra:status": "node scripts/status-report.mjs",

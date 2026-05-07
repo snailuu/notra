@@ -194,7 +194,7 @@ notra-serve
 Claude Code 推荐使用 `/plugin` 安装。Codex 或通用 `.agents/skills/` 生态可以通过 npm CLI 初始化：
 
 ```bash
-npm install -g notra
+npm install -g @snailuu/notra
 cd your-project
 notra init --codex
 ```
