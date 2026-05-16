@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import fs from "node:fs/promises";
 import path from "node:path";

@@ -210,6 +210,7 @@ test("notra CLI runs start finish and doctor workflow", async () => {
     "完成 HTTP 调用封装"
   ]);
   assert.match(finish.stdout, /任务知识沉淀完成/);
+  assert.match(finish.stdout, /Git touched files 采集不完整/);
   assert.equal((await fs.readdir(path.join(projectRoot, ".notra", "sessions"))).some((name) => name.endsWith(".md")), true);
 
   const finishJson = await execFileAsync(process.execPath, [

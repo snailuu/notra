@@ -22,7 +22,7 @@
   "scripts": {
     "build": "pnpm build:ts && pnpm build:graph",
     "build:graph": "node knowledge/tools/build-graph-data.mjs",
-    "build:ts": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+    "build:ts": "node scripts/clean-dist.mjs && tsc -p tsconfig.json",
     "codex:install": "node scripts/install-codex-local-plugin.mjs",
     "codex:uninstall": "node scripts/install-codex-local-plugin.mjs uninstall",
     "prepack": "pnpm build:ts",

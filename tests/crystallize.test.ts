@@ -240,6 +240,148 @@ test("crystallizeSession records user profile memory from reflection signals", a
   assert.match(session, /用户倾向先完成可验证的工程阶段/);
 });
 
+test("crystallizeSession bounds and redacts user profile memory", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-user-memory-bounds-");
+  const knowledgeRoot = path.join(projectRoot, ".notra");
+  const oldMemories = Array.from({ length: 55 }, (_, index) => ({
+    id: `old-${index}`,
+    session_id: `session-old-${index}`,
+    kind: "intent-mismatch",
+    inferred_preference: `旧画像 ${index}`,
+    confidence: 0.5,
+    created_at: `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`
+  }));
+  await fs.writeFile(
+    path.join(knowledgeRoot, "state", "user-memory.json"),
+    `${JSON.stringify({ updated_at: "2026-01-01T00:00:00.000Z", memories: oldMemories }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const result = await crystallizeSession(projectRoot, {
+    sessionId: "session-2026-04-24-user-memory-bounds",
+    title: "限制用户画像",
+    topic: "user-memory-bounds",
+    userMemories: Array.from({ length: 6 }, (_, index) => ({
+      kind: `intent-mismatch-${index}`,
+      assistantSuggestion: index === 0 ? "token=super-secret-value-1234567890" : `建议 ${index}`,
+      userReply: "  用户   回应  ",
+      inferredPreference: `${"偏好".repeat(400)} ${index}`,
+      confidence: 2
+    }))
+  });
+
+  const memory = JSON.parse(
+    await fs.readFile(path.join(knowledgeRoot, "state", "user-memory.json"), "utf8")
+  );
+  const newMemories = memory.memories.filter((item) => item.session_id === result.sessionId);
+
+  assert.equal(result.userMemoryIds.length, 5);
+  assert.equal(memory.memories.length, 50);
+  assert.equal(newMemories.length, 5);
+  assert.equal(newMemories[0].assistant_suggestion, "[REDACTED]");
+  assert.equal(newMemories[0].user_reply, "用户 回应");
+  assert.equal(newMemories[0].confidence, 1);
+  assert.ok(newMemories[0].inferred_preference.length <= 500);
+  assert.equal(memory.memories.some((item) => item.id === "old-0"), false);
+
+  const session = await fs.readFile(
+    path.join(knowledgeRoot, "sessions", "session-2026-04-24-user-memory-bounds.md"),
+    "utf8"
+  );
+  assert.match(session, /\[REDACTED\]/);
+  assert.doesNotMatch(session, /super-secret-value/);
+});
+
+test("crystallizeSession recovers stale user memory locks", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-user-memory-stale-lock-");
+  const knowledgeRoot = path.join(projectRoot, ".notra");
+  const lockPath = path.join(knowledgeRoot, "state", ".user-memory.lock");
+  await fs.mkdir(lockPath, { recursive: true });
+  const staleTime = new Date(Date.now() - 60000);
+  await fs.utimes(lockPath, staleTime, staleTime);
+
+  const result = await crystallizeSession(projectRoot, {
+    sessionId: "session-2026-04-24-user-memory-stale-lock",
+    title: "恢复陈旧锁",
+    topic: "user-memory-stale-lock",
+    userMemory: {
+      kind: "intent-mismatch",
+      inferredPreference: "陈旧锁不应阻塞后续画像写入。"
+    }
+  });
+
+  const memory = JSON.parse(
+    await fs.readFile(path.join(knowledgeRoot, "state", "user-memory.json"), "utf8")
+  );
+  assert.equal(result.mode, "session+user-memory");
+  assert.equal(memory.memories.some((item) => item.session_id === result.sessionId), true);
+  assert.equal(await fileExists(lockPath), false);
+});
+
+test("crystallizeSession preserves concurrent user memory writes", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-user-memory-concurrent-");
+
+  await Promise.all([
+    crystallizeSession(projectRoot, {
+      sessionId: "session-2026-04-24-user-memory-concurrent-a",
+      title: "并发画像 A",
+      topic: "user-memory-concurrent-a",
+      userMemory: { kind: "intent-mismatch", inferredPreference: "并发画像 A" }
+    }),
+    crystallizeSession(projectRoot, {
+      sessionId: "session-2026-04-24-user-memory-concurrent-b",
+      title: "并发画像 B",
+      topic: "user-memory-concurrent-b",
+      userMemory: { kind: "intent-mismatch", inferredPreference: "并发画像 B" }
+    })
+  ]);
+
+  const memory = JSON.parse(
+    await fs.readFile(path.join(projectRoot, ".notra", "state", "user-memory.json"), "utf8")
+  );
+  assert.equal(memory.memories.some((item) => item.inferred_preference === "并发画像 A"), true);
+  assert.equal(memory.memories.some((item) => item.inferred_preference === "并发画像 B"), true);
+});
+
+test("plugin crystallize runtime records user profile memory", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-plugin-user-memory-");
+  const inputPath = path.join(path.dirname(projectRoot), "plugin-user-memory.json");
+  await fs.writeFile(
+    inputPath,
+    `${JSON.stringify(
+      {
+        sessionId: "session-2026-04-24-plugin-user-memory",
+        title: "插件记录用户画像",
+        topic: "plugin-user-memory",
+        decisionSummary: "插件入口也应记录用户画像。",
+        userMemory: {
+          kind: "intent-mismatch",
+          assistantSuggestion: "先扩展功能描述。",
+          userReply: "先修复运行时一致性。",
+          inferredPreference: "用户会优先要求插件和 CLI 行为保持一致。",
+          confidence: 0.85
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const { stdout } = await execFileAsync(process.execPath, [
+    path.resolve("plugins", "notra", "scripts", "crystallize-session.mjs"),
+    projectRoot,
+    inputPath
+  ]);
+  const result = JSON.parse(stdout);
+  const memory = JSON.parse(
+    await fs.readFile(path.join(projectRoot, ".notra", "state", "user-memory.json"), "utf8")
+  );
+
+  assert.equal(result.mode, "session+user-memory");
+  assert.equal(memory.memories[0].inferred_preference, "用户会优先要求插件和 CLI 行为保持一致。");
+});
+
 test("crystallizeSession rejects unsafe ids and node types before writing files", async () => {
   const projectRoot = await createInitializedSampleProject("project-knowledge-crystallize-invalid-");
 

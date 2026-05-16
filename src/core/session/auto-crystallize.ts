@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
@@ -12,15 +11,18 @@ import { crystallizeSession } from "./crystallize.js";
 import { runPreflight } from "./preflight.js";
 
 const execFileAsync = promisify(execFile);
+const GIT_STATUS_TIMEOUT_MS = 5000;
+const GIT_STATUS_MAX_BUFFER_BYTES = 1024 * 1024;
 
-export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input = {}) {
+export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input: Record<string, any> = {}) {
   const target = await resolveProjectTarget(projectRootOrKnowledgeRoot);
   if (!target.hasKnowledge) {
     return buildNoKnowledgeResult(target);
   }
 
   const taskText = buildTaskText(input);
-  const touchedFiles = await resolveTouchedFiles(target.projectRoot, input);
+  const touchedFileResult = await resolveTouchedFiles(target.projectRoot, input);
+  const touchedFiles = touchedFileResult.files;
   const preflight = await runPreflight(target.projectRoot, taskText);
   const adoptedNodeIds = Array.isArray(input.adoptedNodeIds)
     ? dedupeValues(input.adoptedNodeIds)
@@ -52,6 +54,7 @@ export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input =
     auto: {
       preflightMode: preflight.mode,
       touchedFiles,
+      touchedFilesWarning: touchedFileResult.warning,
       inferredAdoptedNodeIds: adoptedNodeIds,
       generatedIncubatingNodeIds: incubatingNodes.map((node) => node.id)
     }
@@ -139,6 +142,7 @@ function buildNoKnowledgeResult(target) {
     auto: {
       preflightMode: "no-knowledge",
       touchedFiles: [],
+      touchedFilesWarning: null,
       inferredAdoptedNodeIds: [],
       generatedIncubatingNodeIds: []
     }
@@ -159,10 +163,14 @@ function buildTaskText(input) {
 
 async function resolveTouchedFiles(projectRoot, input) {
   if (Array.isArray(input.touchedFiles) && input.touchedFiles.length > 0) {
-    return normalizeTouchedFiles(input.touchedFiles);
+    return { files: normalizeTouchedFiles(input.touchedFiles), warning: null };
   }
 
-  return normalizeTouchedFiles(await collectGitTouchedFiles(projectRoot));
+  const result = await collectGitTouchedFiles(projectRoot);
+  return {
+    files: normalizeTouchedFiles(result.files),
+    warning: result.warning
+  };
 }
 
 async function collectGitTouchedFiles(projectRoot) {
@@ -174,15 +182,64 @@ async function collectGitTouchedFiles(projectRoot) {
       "--porcelain",
       "-uall"
     ], {
-      windowsHide: true
+      windowsHide: true,
+      timeout: GIT_STATUS_TIMEOUT_MS,
+      maxBuffer: GIT_STATUS_MAX_BUFFER_BYTES
+    });
+    return {
+      files: stdout
+        .split(/\r?\n/)
+        .map((line) => parseGitStatusPath(line))
+        .filter(Boolean),
+      warning: null
+    };
+  } catch (error) {
+    const fallbackFiles = await collectFallbackGitTouchedFiles(projectRoot);
+    return {
+      files: fallbackFiles,
+      warning: {
+        ...buildGitStatusWarning(error),
+        fallback: fallbackFiles.length > 0 ? "tracked-diff" : null,
+        incomplete: true
+      }
+    };
+  }
+}
+
+async function collectFallbackGitTouchedFiles(projectRoot) {
+  const outputs = await Promise.all([
+    collectGitFileList(projectRoot, ["diff", "--name-only", "--cached"]),
+    collectGitFileList(projectRoot, ["diff", "--name-only"]),
+    collectGitFileList(projectRoot, ["status", "--porcelain", "-uno"])
+  ]);
+  return dedupeValues(outputs.flat());
+}
+
+async function collectGitFileList(projectRoot, args) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", projectRoot, ...args], {
+      windowsHide: true,
+      timeout: GIT_STATUS_TIMEOUT_MS,
+      maxBuffer: GIT_STATUS_MAX_BUFFER_BYTES
     });
     return stdout
       .split(/\r?\n/)
-      .map((line) => parseGitStatusPath(line))
+      .map((line) => args[0] === "status" ? parseGitStatusPath(line) : line.trim())
       .filter(Boolean);
   } catch {
     return [];
   }
+}
+
+function buildGitStatusWarning(error) {
+  const message = String(error?.message || "git status failed");
+  if (message.includes("maxBuffer")) {
+    return { code: "git-status-max-buffer", message };
+  }
+  if (error?.killed || error?.signal === "SIGTERM") {
+    return { code: "git-status-timeout", message };
+  }
+  return { code: "git-status-failed", message };
 }
 
 function parseGitStatusPath(line) {

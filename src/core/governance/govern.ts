@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -13,13 +12,13 @@ import { lintProjectKnowledge } from "./lint.js";
 const currentFilePath = fileURLToPath(import.meta.url);
 const VALID_NODE_TYPES = new Set(["practice", "option", "context", "constraint", "rule"]);
 
-export async function governProjectKnowledge(projectRootOrKnowledgeRoot = process.cwd(), options = {}) {
+export async function governProjectKnowledge(projectRootOrKnowledgeRoot = process.cwd(), options: Record<string, any> = {}) {
   const knowledgeRoot = await resolveKnowledgeRoot(projectRootOrKnowledgeRoot);
   const report = await lintProjectKnowledge(knowledgeRoot);
   const graph = await buildProjectGraphFromDirectory(knowledgeRoot);
-  const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
-  const actions = [];
-  const duplicateNodeIds = new Set();
+  const nodeMap = new Map<string, any>(graph.nodes.map((node) => [node.id, node]));
+  const actions: any[] = [];
+  const duplicateNodeIds = new Set<string>();
 
   for (const issue of report.issues.filter((item) => item.code === "possible-duplicate-node")) {
     duplicateNodeIds.add(issue.node_id);
@@ -83,7 +82,7 @@ export async function governProjectKnowledge(projectRootOrKnowledgeRoot = proces
   };
 }
 
-export async function rejectKnowledgeNode(projectRootOrKnowledgeRoot, input = {}) {
+export async function rejectKnowledgeNode(projectRootOrKnowledgeRoot, input: Record<string, any> = {}) {
   const knowledgeRoot = await resolveKnowledgeRoot(projectRootOrKnowledgeRoot);
   const nodeId = validateNodeId(input.nodeId);
   const graph = await buildProjectGraphFromDirectory(knowledgeRoot);

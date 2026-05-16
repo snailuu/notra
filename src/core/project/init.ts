@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -395,7 +394,7 @@ function resolveNodePath(knowledgeRoot, node) {
 }
 
 function buildNodeBody(node) {
-  const sections = {
+  const sections: Record<string, any[]> = {
     Summary: [node.summary]
   };
 
@@ -480,7 +479,7 @@ async function writeOpenGraphLauncher(knowledgeRoot, context) {
   await writeTextFileSafe(launcherPath, launcherSource, context);
 }
 
-function createWriteContext(options = {}) {
+function createWriteContext(options: Record<string, any> = {}) {
   return {
     dryRun: Boolean(options.dryRun),
     force: Boolean(options.force),
@@ -582,7 +581,7 @@ function renderMarkdownDocument(frontmatter, sections) {
 
   const lines = ["---", ...serializeYamlObject(normalizedFrontmatter), "---", ""];
 
-  for (const [title, items] of Object.entries(sections)) {
+  for (const [title, items] of Object.entries(sections) as [string, any[]][]) {
     lines.push(`## ${title}`, "");
     for (const item of items) {
       if (!item) {

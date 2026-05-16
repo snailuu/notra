@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -133,7 +132,7 @@ async function resolveProjectKnowledge(target) {
   };
 }
 
-function normalizePreflightLimits(options = {}) {
+function normalizePreflightLimits(options: Record<string, any> = {}) {
   return {
     maxMatchedPractices: normalizeLimit(options.maxMatchedPractices, DEFAULT_PREFLIGHT_LIMITS.maxMatchedPractices),
     maxEvidencePerNode: normalizeLimit(options.maxEvidencePerNode, DEFAULT_PREFLIGHT_LIMITS.maxEvidencePerNode),
@@ -203,7 +202,7 @@ async function readJson(filePath, fallback) {
 }
 
 function scoreTaskMatch(node, taskText) {
-  const taskTerms = tokenize(taskText);
+  const taskTerms: string[] = tokenize(taskText);
   if (taskTerms.length === 0) {
     return 0;
   }
@@ -217,14 +216,14 @@ function scoreTaskMatch(node, taskText) {
 
   return taskTerms.reduce((score, term) => {
     if (nodeText.includes(term)) {
-      const keywordMatch = (node.keywords || []).some((keyword) => normalizeText(keyword) === term);
+      const keywordMatch = (node.keywords || []).some((keyword) => normalizeText(String(keyword)) === term);
       return score + (keywordMatch ? 3 : 1);
     }
     return score;
   }, 0);
 }
 
-function tokenize(value) {
+function tokenize(value): string[] {
   const normalized = normalizeText(value);
   const baseTerms = normalized
     .split(/[^a-z0-9\u4e00-\u9fff]+/u)
@@ -239,8 +238,8 @@ function normalizeText(value) {
   return String(value || "").toLowerCase();
 }
 
-function dedupeValues(values) {
-  return Array.from(new Set((values || []).filter(Boolean)));
+function dedupeValues(values): string[] {
+  return Array.from(new Set((values || []).filter(Boolean).map(String)));
 }
 
 function summarizePractice(node, viewId, limits) {

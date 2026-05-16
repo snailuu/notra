@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -122,7 +121,7 @@ function findEmptyRecommendationPoolIssues(nodes) {
   return nodes
     .filter((node) => node.type === "practice")
     .filter((node) =>
-      Object.values(node.recommendation_pools || {}).every((optionIds) => optionIds.length === 0)
+      Object.values(node.recommendation_pools || {}).every((optionIds: any) => optionIds.length === 0)
     )
     .map((node) => ({
       code: "practice-empty-recommendation-pool",
@@ -153,7 +152,7 @@ function findRecommendationPoolEvictionIssues(nodes) {
   const issues = [];
 
   for (const practice of nodes.filter((node) => node.type === "practice")) {
-    for (const [viewId, optionIds] of Object.entries(practice.evicted_option_ids || {})) {
+    for (const [viewId, optionIds] of Object.entries(practice.evicted_option_ids || {}) as [string, any[]][]) {
       if (optionIds.length === 0) {
         continue;
       }

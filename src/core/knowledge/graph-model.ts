@@ -1,6 +1,7 @@
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 import fs from "node:fs/promises";
 import path from "node:path";
+
+type AnyRecord = Record<string, any>;
 
 const ENTITY_DIRECTORIES = [
   "practices",
@@ -17,6 +18,16 @@ const INCUBATING_ENTITY_DIRECTORIES = [
   "constraints",
   "contexts"
 ];
+
+const VALID_NODE_TYPES = new Set([
+  "practice",
+  "option",
+  "context",
+  "constraint",
+  "rule",
+  "session",
+  "project_profile"
+]);
 
 export const LIFECYCLE_POLICY = {
   recommendationPoolLimit: 3,
@@ -43,7 +54,7 @@ export function computeFinalScore(baseScore, projectAdjustment = 0) {
   return Number(baseScore || 0) + Number(projectAdjustment || 0);
 }
 
-export function computeUsageAdjustment(usageStats = {}) {
+export function computeUsageAdjustment(usageStats: AnyRecord = {}) {
   const adoptedCount = Number(usageStats.adopted_count || 0);
   const sessionMentions = Number(usageStats.session_mentions || 0);
   return Math.min(adoptedCount * 3 + sessionMentions, 15);
@@ -53,7 +64,7 @@ export function computeEffectiveScore(baseScore, projectAdjustment = 0, usageAdj
   return computeFinalScore(baseScore, projectAdjustment) + Number(usageAdjustment || 0);
 }
 
-export function parseFrontmatterBlock(source) {
+export function parseFrontmatterBlock(source): { data: AnyRecord; body: string } {
   const normalized = source.replace(/\r\n/g, "\n");
   if (!normalized.startsWith("---\n")) {
     return { data: {}, body: normalized.trim() };
@@ -72,11 +83,14 @@ export function parseFrontmatterBlock(source) {
   };
 }
 
-export async function parseMarkdownDocument(filePath, rootDirectory) {
+export async function parseMarkdownDocument(filePath, rootDirectory): Promise<AnyRecord> {
   const source = await fs.readFile(filePath, "utf8");
   const { data, body } = parseFrontmatterBlock(source);
   if (!data.id || !data.type || !data.title) {
     throw new Error(`文档缺少必填字段: ${filePath}`);
+  }
+  if (!VALID_NODE_TYPES.has(data.type)) {
+    throw new Error(`文档节点类型非法: ${data.type} (${filePath})`);
   }
 
   return {
@@ -87,14 +101,14 @@ export async function parseMarkdownDocument(filePath, rootDirectory) {
   };
 }
 
-export async function buildProjectGraphFromDirectory(projectKnowledgeDir) {
+export async function buildProjectGraphFromDirectory(projectKnowledgeDir): Promise<AnyRecord> {
   const documents = await loadProjectKnowledgeDocuments(projectKnowledgeDir);
-  const nodes = documents.map((document) => normalizeNode(document));
+  const nodes: AnyRecord[] = documents.map((document) => normalizeNode(document));
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
   const projectNode = nodes.find((node) => node.type === "project_profile") || null;
   const usageIndex = await loadUsageIndex(projectKnowledgeDir);
   const viewIds = ["global", ...(projectNode ? [projectNode.id] : [])];
-  const optionsByPractice = new Map();
+  const optionsByPractice = new Map<string, string[]>();
 
   for (const node of nodes) {
     node.usage_stats = usageIndex[node.id] || {
@@ -185,9 +199,9 @@ export async function buildProjectGraphFromDirectory(projectKnowledgeDir) {
 }
 
 export function createGraphIndex(graph) {
-  const byType = {};
-  const practiceOptions = {};
-  const searchTerms = {};
+  const byType: Record<string, string[]> = {};
+  const practiceOptions: Record<string, string[]> = {};
+  const searchTerms: Record<string, string[]> = {};
 
   for (const node of graph.nodes) {
     byType[node.type] = byType[node.type] || [];
@@ -236,8 +250,8 @@ export async function writeGraphFiles(projectKnowledgeDir, graph) {
   return index;
 }
 
-async function loadProjectKnowledgeDocuments(projectKnowledgeDir) {
-  const documents = [];
+async function loadProjectKnowledgeDocuments(projectKnowledgeDir): Promise<AnyRecord[]> {
+  const documents: AnyRecord[] = [];
 
   const projectProfilePath = path.join(projectKnowledgeDir, "project-profile.md");
   if (await fileExists(projectProfilePath)) {
@@ -313,7 +327,7 @@ async function safeReadDirectory(directoryPath) {
   }
 }
 
-function normalizeNode(document) {
+function normalizeNode(document): AnyRecord {
   const maturity = document.maturity || deriveDefaultMaturity(document.source_path);
   return {
     id: document.id,
@@ -360,7 +374,7 @@ function deriveDefaultMaturity(sourcePath) {
 }
 
 function buildEdges(nodes, nodeMap) {
-  const edges = [];
+  const edges: AnyRecord[] = [];
 
   for (const node of nodes) {
     if (node.type === "option" && node.practice && nodeMap.has(node.practice)) {
@@ -437,7 +451,7 @@ function compareOptions(left, right, viewId) {
 }
 
 function attachLifecycleState(node) {
-  const reasons = [];
+  const reasons: string[] = [];
 
   if (node.review_status === "rejected") {
     node.lifecycle_state = "rejected";
@@ -528,7 +542,7 @@ function normalizeWhitespace(value) {
 }
 
 function countByType(nodes) {
-  const counts = {};
+  const counts: Record<string, number> = {};
   for (const node of nodes) {
     counts[node.type] = (counts[node.type] || 0) + 1;
   }
@@ -536,7 +550,7 @@ function countByType(nodes) {
 }
 
 function countByMaturity(nodes) {
-  const counts = {};
+  const counts: Record<string, number> = {};
   for (const node of nodes) {
     counts[node.maturity || "stable"] = (counts[node.maturity || "stable"] || 0) + 1;
   }
@@ -544,7 +558,7 @@ function countByMaturity(nodes) {
 }
 
 function attachNeighborIds(nodes, edges) {
-  const neighborMap = new Map(nodes.map((node) => [node.id, new Set()]));
+  const neighborMap = new Map<string, Set<string>>(nodes.map((node) => [node.id, new Set<string>()]));
 
   for (const edge of edges) {
     if (!neighborMap.has(edge.from) || !neighborMap.has(edge.to)) {
@@ -597,21 +611,21 @@ function dedupeIds(values) {
   return Array.from(new Set(asArray(values).filter(Boolean)));
 }
 
-function asArray(value) {
+function asArray(value): any[] {
   if (!value) {
     return [];
   }
   return Array.isArray(value) ? value : [value];
 }
 
-function parseYamlSubset(source) {
+function parseYamlSubset(source): AnyRecord {
   const lines = source.split("\n");
   const { value } = parseBlock(lines, 0, 0, "object");
   return value;
 }
 
-function parseBlock(lines, startIndex, indentLevel, containerType) {
-  const result = containerType === "array" ? [] : {};
+function parseBlock(lines, startIndex, indentLevel, containerType): { value: any; nextIndex: number } {
+  const result: any = containerType === "array" ? [] : {};
   let index = startIndex;
 
   while (index < lines.length) {

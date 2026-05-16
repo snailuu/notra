@@ -142,7 +142,13 @@ async function runInit(flags) {
   const projectRoot = path.resolve(flags.projectRoot || process.cwd());
   const selectedPlatforms = await resolveInitPlatforms(flags, interactive);
   const initializeKnowledge = flags.platformOnly ? false : await resolveInitProjectKnowledge(flags, interactive);
-  const result = {
+  const result: {
+    ok: true;
+    projectRoot: string;
+    platformInstall: Awaited<ReturnType<typeof installNotraPlatforms>> | null;
+    projectKnowledge: Awaited<ReturnType<typeof initializeProjectKnowledge>> | null;
+    nextSteps: string[];
+  } = {
     ok: true,
     projectRoot,
     platformInstall: null,
@@ -224,8 +230,8 @@ async function runFinish(positionals, flags) {
   const inputArgs = buildInputArgs(flags, rest.length > 0 ? rest : taskText ? [taskText] : []);
   const input = await loadAutoCrystallizeCliInput(projectRoot, inputArgs);
   const crystallize = await autoCrystallizeSession(projectRoot, input);
-  let lint = null;
-  let status = null;
+  let lint: Awaited<ReturnType<typeof lintProjectKnowledge>> | null = null;
+  let status: Awaited<ReturnType<typeof generateStatusReport>> | null = null;
 
   if (crystallize.mode !== "no-knowledge") {
     lint = await lintProjectKnowledge(projectRoot);
@@ -349,7 +355,7 @@ function summarizeChecks(checks) {
 }
 
 function buildDoctorSuggestions(checks) {
-  const suggestions = [];
+  const suggestions: string[] = [];
   if (checks.some((check) => check.id === "knowledge-profile" && check.status === "fail")) {
     suggestions.push("notra init");
   }
@@ -517,8 +523,10 @@ function formatFinishSummary(result) {
     ].join("\n");
   }
 
+  const touchedFilesWarning = result.crystallize.auto?.touchedFilesWarning;
   return [
     "任务知识沉淀完成",
+    ...(touchedFilesWarning ? [`警告: Git touched files 采集不完整 (${touchedFilesWarning.code})`] : []),
     `知识库: ${result.knowledgeRoot}`,
     `Session: ${result.crystallize.sessionId}`,
     `采纳节点: ${result.crystallize.adoptedNodeIds.length}`,
@@ -537,7 +545,7 @@ function buildFinishNextSteps(crystallize, lint, status) {
     return ["notra init"];
   }
 
-  const steps = [];
+  const steps: string[] = [];
   if ((lint?.summary.issue_count || 0) > 0) {
     steps.push("notra lint");
   }

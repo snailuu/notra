@@ -73,6 +73,45 @@ test("buildProjectGraphFromDirectory loads root project profile and incubating n
   ]);
 });
 
+test("buildProjectGraphFromDirectory rejects unsupported node types", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-invalid-type-"));
+  const knowledgeRoot = path.join(tempRoot, ".notra");
+  await fs.mkdir(path.join(knowledgeRoot, "practices"), { recursive: true });
+  await fs.writeFile(
+    path.join(knowledgeRoot, "project-profile.md"),
+    `---
+id: project-current
+type: project_profile
+title: 示例项目
+---
+
+## Summary
+
+示例项目。
+`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(knowledgeRoot, "practices", "practice-invalid.md"),
+    `---
+id: practice-invalid
+type: 'foo" onclick="alert(1)'
+title: 非法节点
+---
+
+## Summary
+
+非法节点。
+`,
+    "utf8"
+  );
+
+  await assert.rejects(
+    buildProjectGraphFromDirectory(knowledgeRoot),
+    /文档节点类型非法/
+  );
+});
+
 test("buildProjectGraphFromDirectory ranks recommendation pools with usage adjustment", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-ranking-"));
   const knowledgeRoot = path.join(tempRoot, ".notra");

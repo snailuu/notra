@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 // DEPRECATED: This script is broken with current Claude Code versions.
 // It writes notra@local into installed_plugins.json without registering the
@@ -159,7 +158,7 @@ export function removePluginFromInstalled(existingPayload) {
 export async function installClaudeLocalPlugin({
   repositoryRoot,
   homeDir
-} = {}) {
+}: Record<string, any> = {}) {
   const paths = resolveClaudePluginPaths({ repositoryRoot, homeDir });
 
   if (!(await exists(paths.sourcePluginPath))) {
@@ -201,7 +200,7 @@ export async function installClaudeLocalPlugin({
 export async function uninstallClaudeLocalPlugin({
   repositoryRoot,
   homeDir
-} = {}) {
+}: Record<string, any> = {}) {
   const paths = resolveClaudePluginPaths({ repositoryRoot, homeDir });
   const existingPlugins = await readJsonIfPresent(paths.installedPluginsPath);
   const nextPlugins = removePluginFromInstalled(existingPlugins);

@@ -1,4 +1,3 @@
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -7,7 +6,7 @@ import {
   parseMarkdownDocument
 } from "../knowledge/graph-model.js";
 
-export async function refreshObsidianVault(knowledgeRoot, options = {}) {
+export async function refreshObsidianVault(knowledgeRoot, options: Record<string, any> = {}) {
   const graph = options.graph || await buildProjectGraphFromDirectory(knowledgeRoot);
   const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
 
@@ -36,7 +35,7 @@ export function createLogEvent(action, summary, details = {}) {
 }
 
 export function buildObsidianLinkSection(node) {
-  const lines = [];
+  const lines: string[] = [];
 
   if (node.type === "practice") {
     pushLinkGroup(lines, "Options", node.option_ids);

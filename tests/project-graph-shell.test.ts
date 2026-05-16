@@ -255,6 +255,13 @@ test("project graph shell exposes graph-header search hooks", () => {
   assert.match(css, /\.graph-panel-tools/);
 });
 
+test("project graph shell maps node type class names through a whitelist", () => {
+  assert.match(js, /function resolveTypeClass/);
+  assert.match(js, /TYPE_CLASS_SUFFIXES/);
+  assert.doesNotMatch(js, /class="chip type-\$\{node\.type\}/);
+  assert.doesNotMatch(js, /class="chip type-\$\{target\.type\}/);
+});
+
 test("project graph shell wraps long node labels inside fixed node surfaces", () => {
   const label = layoutNodeLabel("自动同步任务使用全局调度器", {
     maxWidth: 126,

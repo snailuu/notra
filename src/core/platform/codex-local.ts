@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -144,7 +143,7 @@ async function ensurePluginLink(sourcePluginPath, homePluginPath) {
 export async function installCodexLocalPlugin({
   repositoryRoot,
   homeDir
-} = {}) {
+}: Record<string, any> = {}) {
   const paths = resolveCodexHomeLocalPaths({ repositoryRoot, homeDir });
 
   if (!(await exists(paths.sourcePluginPath))) {
@@ -171,7 +170,7 @@ export async function installCodexLocalPlugin({
 export async function uninstallCodexLocalPlugin({
   repositoryRoot,
   homeDir
-} = {}) {
+}: Record<string, any> = {}) {
   const paths = resolveCodexHomeLocalPaths({ repositoryRoot, homeDir });
   const existingMarketplace = await readJsonIfPresent(paths.homeMarketplacePath);
   const nextMarketplace = removePluginFromMarketplace(existingMarketplace);

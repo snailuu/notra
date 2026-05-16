@@ -1,4 +1,3 @@
-// @ts-nocheck -- 第一阶段保守迁移：业务脚本保持行为等价，CLI 边界先类型化。
 const IGNORED_EVIDENCE_PREFIXES = [
   ".git/",
   ".notra/",

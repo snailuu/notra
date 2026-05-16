@@ -679,7 +679,7 @@ function renderDetailHeaderBlock(node, nodeMap) {
     <section class="detail-block detail-header-block">
       <div class="detail-header-top">
         <div class="detail-chip-row">
-          <span class="chip type-${node.type}">${TYPE_LABELS[node.type]}</span>
+          <span class="chip ${resolveTypeClass(node.type)}">${escapeHtml(TYPE_LABELS[node.type] || node.type)}</span>
           <span class="chip ${node.maturity === "incubating" ? "maturity-incubating" : "chip-quiet"}">${node.maturity === "incubating" ? "孵化中" : "稳定"}</span>
           ${node.status ? `<span class="chip chip-quiet">${escapeHtml(node.status)}</span>` : ""}
         </div>
@@ -1024,7 +1024,7 @@ function renderRelationGroup(title, ids, nodeMap) {
         ${targets
           .map(
             (target) => `
-              <button class="chip type-${target.type} is-button" type="button" data-node-id="${escapeAttribute(target.id)}">
+              <button class="chip ${resolveTypeClass(target.type)} is-button" type="button" data-node-id="${escapeAttribute(target.id)}">
                 ${escapeHtml(target.title)}
               </button>
             `
@@ -1222,6 +1222,10 @@ function resolveNodeClass(node) {
   return "node-badge node-project-badge";
 }
 
+function resolveTypeClass(type) {
+  return `type-${TYPE_CLASS_SUFFIXES[type] || "unknown"}`;
+}
+
 function buildNodeMeta(node) {
   if (node.type === "practice") {
     return `${node.option_ids?.length || 0} 个候选方案 / ${node.maturity === "incubating" ? "孵化中" : "稳定"}`;
@@ -1328,6 +1332,15 @@ const TYPE_LABELS = {
   constraint: "约束",
   rule: "规则",
   project_profile: "项目画像"
+};
+
+const TYPE_CLASS_SUFFIXES = {
+  practice: "practice",
+  option: "option",
+  context: "context",
+  constraint: "constraint",
+  rule: "rule",
+  project_profile: "project-profile"
 };
 
 const SCORE_LABELS = {

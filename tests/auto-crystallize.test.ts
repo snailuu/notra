@@ -219,6 +219,37 @@ test("autoCrystallizeSession avoids incubating knowledge when only volatile file
   assert.doesNotMatch(session, /docs\/|\.worktrees|task_plan\.md|findings\.md|progress\.md/);
 });
 
+test("autoCrystallizeSession reports git touched-file collection fallback", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-auto-git-fallback-");
+  const fakeBin = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-fake-git-"));
+  const fakeGitPath = path.join(fakeBin, "git");
+  await fs.writeFile(
+    fakeGitPath,
+    `#!/usr/bin/env node\nconst args = process.argv.slice(2);\nif (args.includes('status') && args.includes('-uall')) {\n  process.stdout.write('x'.repeat(1024 * 1024 + 1));\n} else if (args.includes('diff')) {\n  process.stdout.write('src/fallback.ts\\n');\n} else {\n  process.stdout.write('');\n}\n`,
+    "utf8"
+  );
+  await fs.chmod(fakeGitPath, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fakeBin}${path.delimiter}${originalPath || ""}`;
+
+  try {
+    const result = await autoCrystallizeSession(projectRoot, {
+      sessionId: "session-2026-04-28-auto-git-fallback",
+      title: "Git 状态采集失败",
+      topic: "git-fallback",
+      taskText: "git status fallback",
+      decisionSummary: "本轮未显式提供 touched files。"
+    });
+
+    assert.deepEqual(result.auto.touchedFiles, ["src/fallback.ts"]);
+    assert.equal(result.auto.touchedFilesWarning.code, "git-status-max-buffer");
+    assert.equal(result.auto.touchedFilesWarning.fallback, "tracked-diff");
+    assert.equal(result.auto.touchedFilesWarning.incomplete, true);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
 test("autoCrystallizeSession generalizes long-running scheduler knowledge beyond business nouns", async () => {
   const projectRoot = await createInitializedSampleProject("project-knowledge-auto-generalized-");
 

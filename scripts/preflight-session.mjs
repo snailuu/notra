@@ -52,6 +52,7 @@ export async function runPreflight(projectRootOrKnowledgeRoot = process.cwd(), t
     });
   }
 
+  const userMemory = await loadUserMemory(resolved.knowledgeRoot);
   const graph = await buildProjectGraphFromDirectory(resolved.knowledgeRoot);
   const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
   const viewId =
@@ -81,6 +82,7 @@ export async function runPreflight(projectRootOrKnowledgeRoot = process.cwd(), t
       matchedPractices,
       recommendedOptions,
       incubatingCandidates: recommendedOptions.filter((option) => option.maturity === "incubating"),
+      userMemory,
       evidenceHints: evidenceHintResult.hints,
       evidenceHintCount: evidenceHintResult.totalCount,
       evidenceHintsTruncated: evidenceHintResult.truncated
@@ -98,6 +100,7 @@ export async function runPreflight(projectRootOrKnowledgeRoot = process.cwd(), t
     matchedPractices: [],
     recommendedOptions: [],
     incubatingCandidates: [],
+    userMemory,
     evidenceHints: evidenceHintResult.hints,
     evidenceHintCount: evidenceHintResult.totalCount,
     evidenceHintsTruncated: evidenceHintResult.truncated
@@ -156,10 +159,46 @@ function emptyPreflightResult({ mode, projectRoot, knowledgeRoot, taskText, limi
     matchedPractices: [],
     recommendedOptions: [],
     incubatingCandidates: [],
+    userMemory: { memories: [], profileHints: [] },
     evidenceHints: [],
     evidenceHintCount: 0,
     evidenceHintsTruncated: false
   };
+}
+
+async function loadUserMemory(knowledgeRoot) {
+  const memoryPath = path.join(knowledgeRoot, "state", "user-memory.json");
+  const payload = await readJson(memoryPath, { memories: [] });
+  const memories = Array.isArray(payload.memories) ? payload.memories : [];
+  const recentMemories = memories
+    .filter((memory) => memory && typeof memory === "object")
+    .slice(-5)
+    .reverse()
+    .map((memory) => ({
+      id: memory.id,
+      kind: memory.kind,
+      inferred_preference: memory.inferred_preference,
+      confidence: memory.confidence,
+      session_id: memory.session_id
+    }));
+
+  return {
+    memories: recentMemories,
+    profileHints: recentMemories
+      .map((memory) => memory.inferred_preference)
+      .filter(Boolean)
+  };
+}
+
+async function readJson(filePath, fallback) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return fallback;
+    }
+    throw error;
+  }
 }
 
 function scoreTaskMatch(node, taskText) {
