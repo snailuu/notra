@@ -121,6 +121,53 @@ test("initializeProjectKnowledge bootstraps .notra from local code and docs", as
   assert.match(launcher, /8124/);
 });
 
+test("initializeProjectKnowledge dry-run reports writes without touching disk", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-init-dry-run-"));
+  const projectRoot = path.join(tempRoot, "sample-project");
+
+  await fs.cp(fixtureRoot, projectRoot, { recursive: true });
+
+  const summary = await initializeProjectKnowledge(projectRoot, { dryRun: true });
+
+  assert.equal(summary.dryRun, true);
+  assert.equal(summary.writes.length > 0, true);
+  assert.equal(await fileExists(path.join(projectRoot, ".notra")), false);
+});
+
+test("initializeProjectKnowledge does not overwrite existing knowledge by default", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-init-existing-"));
+  const projectRoot = path.join(tempRoot, "sample-project");
+  const profilePath = path.join(projectRoot, ".notra", "project-profile.md");
+
+  await fs.cp(fixtureRoot, projectRoot, { recursive: true });
+  await initializeProjectKnowledge(projectRoot);
+  await fs.writeFile(profilePath, "custom profile\n", "utf8");
+
+  const summary = await initializeProjectKnowledge(projectRoot);
+
+  assert.equal(summary.alreadyInitialized, true);
+  assert.equal(summary.writes.length, 0);
+  assert.equal(await fs.readFile(profilePath, "utf8"), "custom profile\n");
+});
+
+test("initializeProjectKnowledge handles existing knowledge with skipExisting or force", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-init-force-"));
+  const projectRoot = path.join(tempRoot, "sample-project");
+  const profilePath = path.join(projectRoot, ".notra", "project-profile.md");
+
+  await fs.cp(fixtureRoot, projectRoot, { recursive: true });
+  await initializeProjectKnowledge(projectRoot);
+  await fs.writeFile(profilePath, "custom profile\n", "utf8");
+
+  const skipped = await initializeProjectKnowledge(projectRoot, { skipExisting: true });
+  assert.equal(skipped.skipped.some((item) => item.path === profilePath && item.reason === "exists"), true);
+  assert.equal(await fs.readFile(profilePath, "utf8"), "custom profile\n");
+
+  const forced = await initializeProjectKnowledge(projectRoot, { force: true });
+  assert.equal(forced.writes.some((item) => item.path === profilePath && item.action === "overwrite"), true);
+  assert.match(await fs.readFile(profilePath, "utf8"), /title: 示例初始化项目/);
+});
+
 test("initializeProjectKnowledge does not create centralized config recommendations from page-level config files", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-inline-config-"));
   const projectRoot = path.join(tempRoot, "inline-config-project");

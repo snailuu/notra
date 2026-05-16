@@ -18,36 +18,63 @@ const previewScriptPath = path.join(scriptDirectory, "serve-project-knowledge.mj
 const portablePreviewScriptPath = path.join("tools", "serve-project-knowledge.mjs");
 const defaultPreviewPort = 8124;
 
-export async function initializeProjectKnowledge(projectRoot) {
+export async function initializeProjectKnowledge(projectRoot, options = {}) {
   const resolvedProjectRoot = path.resolve(projectRoot);
-  const scan = await scanProject(resolvedProjectRoot);
   const knowledgeRoot = path.join(resolvedProjectRoot, ".notra");
+  const context = createWriteContext(options);
+  const projectProfilePath = path.join(knowledgeRoot, "project-profile.md");
+
+  if (await fileExists(projectProfilePath) && !context.force && !context.skipExisting) {
+    return {
+      projectRoot: resolvedProjectRoot,
+      knowledgeRoot,
+      alreadyInitialized: true,
+      dryRun: context.dryRun,
+      writes: [],
+      skipped: [{ path: projectProfilePath, reason: "already-initialized" }],
+      tech: [],
+      buildTools: [],
+      testTools: [],
+      stableNodeIds: [],
+      incubatingNodeIds: []
+    };
+  }
+
+  const scan = await scanProject(resolvedProjectRoot);
   const nodes = buildInitialNodes(scan);
 
-  await ensureKnowledgeSkeleton(knowledgeRoot);
-  await writeCoreDocuments(knowledgeRoot, scan);
-  await writeProjectProfile(knowledgeRoot, scan, nodes);
-  await writeNodes(knowledgeRoot, nodes);
-  await fs.cp(templateDirectory, path.join(knowledgeRoot, "templates"), {
-    force: true,
-    recursive: true
-  });
-  await writePortablePreviewServer(knowledgeRoot);
-  await writeStateFiles(knowledgeRoot);
+  await ensureKnowledgeSkeleton(knowledgeRoot, context);
+  await writeCoreDocuments(knowledgeRoot, scan, context);
+  await writeProjectProfile(knowledgeRoot, scan, nodes, context);
+  await writeNodes(knowledgeRoot, nodes, context);
+  await copyTreeSafe(templateDirectory, path.join(knowledgeRoot, "templates"), context);
+  await writePortablePreviewServer(knowledgeRoot, context);
+  await writeStateFiles(knowledgeRoot, context);
 
-  const graphArtifacts = await buildProjectGraphArtifacts(knowledgeRoot);
-  await refreshObsidianVault(knowledgeRoot, {
-    graph: graphArtifacts.graph,
-    event: createLogEvent("notra:init", "初始化项目知识库", {
-      stable: nodes.filter((node) => node.maturity === "stable").length,
-      incubating: nodes.filter((node) => node.maturity === "incubating").length
-    })
-  });
-  await writeOpenGraphLauncher(knowledgeRoot);
+  const skippedProjectProfile = context.skipped.some(
+    (item) => item.path === projectProfilePath && item.reason === "exists"
+  );
+  if (!context.dryRun && !skippedProjectProfile) {
+    const graphArtifacts = await buildProjectGraphArtifacts(knowledgeRoot);
+    await refreshObsidianVault(knowledgeRoot, {
+      graph: graphArtifacts.graph,
+      event: createLogEvent("notra:init", "初始化项目知识库", {
+        stable: nodes.filter((node) => node.maturity === "stable").length,
+        incubating: nodes.filter((node) => node.maturity === "incubating").length
+      })
+    });
+  } else if (context.dryRun) {
+    planGeneratedArtifacts(knowledgeRoot, context);
+  }
+  await writeOpenGraphLauncher(knowledgeRoot, context);
 
   return {
     projectRoot: resolvedProjectRoot,
     knowledgeRoot,
+    alreadyInitialized: false,
+    dryRun: context.dryRun,
+    writes: context.writes,
+    skipped: context.skipped,
     tech: scan.tech,
     buildTools: scan.buildTools,
     testTools: scan.testTools,
@@ -229,7 +256,7 @@ function buildInitialNodes(scan) {
   return nodes;
 }
 
-async function ensureKnowledgeSkeleton(knowledgeRoot) {
+async function ensureKnowledgeSkeleton(knowledgeRoot, context) {
   const directories = [
     knowledgeRoot,
     path.join(knowledgeRoot, "practices"),
@@ -251,33 +278,37 @@ async function ensureKnowledgeSkeleton(knowledgeRoot) {
     path.join(knowledgeRoot, "tools")
   ];
 
+  if (context.dryRun) {
+    return;
+  }
+
   await Promise.all(directories.map((directory) => fs.mkdir(directory, { recursive: true })));
 }
 
-async function writeCoreDocuments(knowledgeRoot, scan) {
-  await fs.writeFile(
+async function writeCoreDocuments(knowledgeRoot, scan, context) {
+  await writeTextFileSafe(
     path.join(knowledgeRoot, "README.md"),
     `# ${scan.title} 项目知识库\n\n该目录由 project-knowledge-skill 为当前项目生成，用于沉淀项目实践、方案、规则和会话结晶。\n\n可直接双击 \`open-graph.cmd\` 启动本地图谱预览。\n`,
-    "utf8"
+    context
   );
-  await fs.writeFile(
+  await writeTextFileSafe(
     path.join(knowledgeRoot, "overview.md"),
     `# 项目概览\n\n- 项目：${scan.title}\n- 技术栈：${scan.tech.join(", ") || "待补充"}\n- 构建工具：${scan.buildTools.join(", ") || "待补充"}\n- 测试工具：${scan.testTools.join(", ") || "待补充"}\n`,
-    "utf8"
+    context
   );
-  await fs.writeFile(
+  await writeTextFileSafe(
     path.join(knowledgeRoot, "workflow.md"),
     "# 工作流\n\n- 双击 `open-graph.cmd` 打开当前项目的图谱预览\n- 在 Codex 技能列表中使用 `notra:notra-status` 查看当前知识库状态\n- 在 Codex 技能列表中使用 `notra:notra-graph` 刷新图谱阅读层\n- 在任务结束时由 agent 做轻量结晶判断\n",
-    "utf8"
+    context
   );
-  await fs.writeFile(
+  await writeTextFileSafe(
     path.join(knowledgeRoot, "scoring.md"),
     "# 评分\n\n`final_score = base_score + project_adjustment`\n",
-    "utf8"
+    context
   );
 }
 
-async function writeProjectProfile(knowledgeRoot, scan, nodes) {
+async function writeProjectProfile(knowledgeRoot, scan, nodes, context) {
   const preferredOptions = {};
   if (nodes.some((node) => node.id === "option-unified-client")) {
     preferredOptions["option-unified-client"] = 8;
@@ -325,16 +356,15 @@ async function writeProjectProfile(knowledgeRoot, scan, nodes) {
     }
   );
 
-  await fs.writeFile(path.join(knowledgeRoot, "project-profile.md"), document, "utf8");
+  await writeTextFileSafe(path.join(knowledgeRoot, "project-profile.md"), document, context);
 }
 
-async function writeNodes(knowledgeRoot, nodes) {
+async function writeNodes(knowledgeRoot, nodes, context) {
   await Promise.all(
     nodes.map(async (node) => {
       const documentPath = resolveNodePath(knowledgeRoot, node);
       const body = buildNodeBody(node);
-      await fs.mkdir(path.dirname(documentPath), { recursive: true });
-      await fs.writeFile(documentPath, renderMarkdownDocument(node, body), "utf8");
+      await writeTextFileSafe(documentPath, renderMarkdownDocument(node, body), context);
     })
   );
 }
@@ -395,13 +425,13 @@ function buildNodeBody(node) {
   return sections;
 }
 
-async function writeStateFiles(knowledgeRoot) {
-  await fs.writeFile(
+async function writeStateFiles(knowledgeRoot, context) {
+  await writeTextFileSafe(
     path.join(knowledgeRoot, "state", "usage-index.json"),
     "{}\n",
-    "utf8"
+    context
   );
-  await fs.writeFile(
+  await writeTextFileSafe(
     path.join(knowledgeRoot, "state", "runtime-state.json"),
     `${JSON.stringify(
       {
@@ -414,15 +444,15 @@ async function writeStateFiles(knowledgeRoot) {
       null,
       2
     )}\n`,
-    "utf8"
+    context
   );
 }
 
-async function writePortablePreviewServer(knowledgeRoot) {
-  await fs.copyFile(previewScriptPath, path.join(knowledgeRoot, portablePreviewScriptPath));
+async function writePortablePreviewServer(knowledgeRoot, context) {
+  await copyFileSafe(previewScriptPath, path.join(knowledgeRoot, portablePreviewScriptPath), context);
 }
 
-async function writeOpenGraphLauncher(knowledgeRoot) {
+async function writeOpenGraphLauncher(knowledgeRoot, context) {
   const launcherPath = path.join(knowledgeRoot, "open-graph.cmd");
   const launcherSource = [
     "@echo off",
@@ -443,7 +473,103 @@ async function writeOpenGraphLauncher(knowledgeRoot) {
     ""
   ].join("\r\n");
 
-  await fs.writeFile(launcherPath, launcherSource, "utf8");
+  await writeTextFileSafe(launcherPath, launcherSource, context);
+}
+
+function createWriteContext(options = {}) {
+  return {
+    dryRun: Boolean(options.dryRun),
+    force: Boolean(options.force),
+    skipExisting: Boolean(options.skipExisting),
+    writes: [],
+    skipped: []
+  };
+}
+
+async function writeTextFileSafe(filePath, content, context) {
+  const existing = await fs.readFile(filePath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  });
+
+  if (existing === content) {
+    context.skipped.push({ path: filePath, reason: "unchanged" });
+    return false;
+  }
+
+  if (existing !== null && !context.force) {
+    if (context.skipExisting) {
+      context.skipped.push({ path: filePath, reason: "exists" });
+      return false;
+    }
+    throw new Error(`目标文件已存在且内容不同: ${filePath}`);
+  }
+
+  context.writes.push({
+    path: filePath,
+    action: existing === null ? "create" : "overwrite"
+  });
+
+  if (!context.dryRun) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, "utf8");
+  }
+
+  return true;
+}
+
+async function copyFileSafe(sourcePath, targetPath, context) {
+  const content = await fs.readFile(sourcePath, "utf8");
+  return await writeTextFileSafe(targetPath, content, context);
+}
+
+async function copyTreeSafe(sourceRoot, targetRoot, context) {
+  const entries = await fs.readdir(sourceRoot, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceRoot, entry.name);
+    const targetPath = path.join(targetRoot, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyTreeSafe(sourcePath, targetPath, context);
+      continue;
+    }
+
+    if (entry.isFile()) {
+      await copyFileSafe(sourcePath, targetPath, context);
+    }
+  }
+}
+
+function planGeneratedArtifacts(knowledgeRoot, context) {
+  for (const relativePath of [
+    "graph/graph-data.json",
+    "graph/graph-index.json",
+    "graph/knowledge-graph.html",
+    "index.md",
+    "log.md",
+    "_views/practices.md",
+    "_views/options.md",
+    "_views/rules.md",
+    ".obsidian/app.json",
+    ".obsidian/graph.json"
+  ]) {
+    context.writes.push({
+      path: path.join(knowledgeRoot, relativePath),
+      action: "generate"
+    });
+  }
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function renderMarkdownDocument(frontmatter, sections) {

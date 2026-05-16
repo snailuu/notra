@@ -92,7 +92,7 @@ test("installNotraPlatforms handles conflicting files with skip-existing or forc
   assert.match(await fs.readFile(skillPath, "utf8"), /node \.notra\/plugin\/scripts\/notra-init\.mjs/);
 });
 
-test("notra CLI exposes version and init", async () => {
+test("notra CLI exposes version and platform-only init", async () => {
   const projectRoot = await createTempProject();
   const version = await execFileAsync(process.execPath, [cliPath, "--version"]);
   assert.equal(version.stdout.trim(), packageJson.version);
@@ -100,23 +100,65 @@ test("notra CLI exposes version and init", async () => {
   const init = await execFileAsync(process.execPath, [
     cliPath,
     "init",
+    "--platform-only",
     "--codex",
     "--project-root",
     projectRoot
   ]);
-  assert.match(init.stdout, /已初始化 notra 平台配置: codex/);
+  assert.match(init.stdout, /Notra 初始化完成/);
+  assert.match(init.stdout, /平台配置: codex/);
   assert.equal(await exists(path.join(projectRoot, ".codex", "skills", "notra-init", "SKILL.md")), true);
+  assert.equal(await exists(path.join(projectRoot, ".notra", "project-profile.md")), false);
+});
+
+test("notra CLI one-shot init initializes platform and project knowledge", async () => {
+  const projectRoot = await createSampleProject();
+
+  const init = await execFileAsync(process.execPath, [
+    cliPath,
+    "init",
+    "--yes",
+    "--project-root",
+    projectRoot
+  ]);
+  assert.match(init.stdout, /Notra 初始化完成/);
+  assert.match(init.stdout, /平台配置: agents/);
+  assert.match(init.stdout, /知识库:/);
+  assert.equal(await exists(path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md")), true);
+  assert.equal(await exists(path.join(projectRoot, ".notra", "project-profile.md")), true);
+});
+
+test("notra CLI init supports json and dry-run", async () => {
+  const projectRoot = await createSampleProject();
+
+  const init = await execFileAsync(process.execPath, [
+    cliPath,
+    "init",
+    "--yes",
+    "--json",
+    "--dry-run",
+    "--project-root",
+    projectRoot
+  ]);
+  const payload = JSON.parse(init.stdout);
+  assert.equal(payload.projectRoot, projectRoot);
+  assert.equal(payload.platformInstall.dryRun, true);
+  assert.equal(payload.projectKnowledge.dryRun, true);
+  assert.equal(payload.platformInstall.writes.length > 0, true);
+  assert.equal(payload.projectKnowledge.writes.length > 0, true);
+  assert.equal(await exists(path.join(projectRoot, ".agents")), false);
+  assert.equal(await exists(path.join(projectRoot, ".notra")), false);
 });
 
 test("notra CLI runs project knowledge subcommands", async () => {
   const projectRoot = await createSampleProject();
 
-  const init = await execFileAsync(process.execPath, [cliPath, "project-init", projectRoot]);
+  const init = await execFileAsync(process.execPath, [cliPath, "project-init", projectRoot, "--json"]);
   const initPayload = JSON.parse(init.stdout);
   assert.equal(initPayload.projectRoot, projectRoot);
   assert.equal(await exists(path.join(projectRoot, ".notra", "project-profile.md")), true);
 
-  const status = await execFileAsync(process.execPath, [cliPath, "status", projectRoot]);
+  const status = await execFileAsync(process.execPath, [cliPath, "status", projectRoot, "--json"]);
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.knowledgeRoot, path.join(projectRoot, ".notra"));
 
@@ -124,18 +166,70 @@ test("notra CLI runs project knowledge subcommands", async () => {
     cliPath,
     "preflight",
     projectRoot,
-    "实现 HTTP 调用"
+    "实现 HTTP 调用",
+    "--json"
   ]);
   const preflightPayload = JSON.parse(preflight.stdout);
   assert.notEqual(preflightPayload.mode, "no-knowledge");
 
-  const graph = await execFileAsync(process.execPath, [cliPath, "graph", projectRoot]);
+  const graph = await execFileAsync(process.execPath, [cliPath, "graph", projectRoot, "--json"]);
   const graphPayload = JSON.parse(graph.stdout);
   assert.equal(graphPayload.output.data, "graph/graph-data.json");
 
-  const lint = await execFileAsync(process.execPath, [cliPath, "lint", projectRoot]);
+  const lint = await execFileAsync(process.execPath, [cliPath, "lint", projectRoot, "--json"]);
   const lintPayload = JSON.parse(lint.stdout);
   assert.equal(typeof lintPayload.summary.issue_count, "number");
+});
+
+test("notra CLI runs start finish and doctor workflow", async () => {
+  const projectRoot = await createSampleProject();
+
+  await execFileAsync(process.execPath, [cliPath, "init", "--yes", "--project-root", projectRoot]);
+
+  const start = await execFileAsync(process.execPath, [
+    cliPath,
+    "start",
+    projectRoot,
+    "实现 HTTP 调用"
+  ]);
+  assert.match(start.stdout, /命中已有项目知识|未命中已有知识/);
+
+  const startJson = await execFileAsync(process.execPath, [
+    cliPath,
+    "start",
+    projectRoot,
+    "实现 HTTP 调用",
+    "--json"
+  ]);
+  assert.notEqual(JSON.parse(startJson.stdout).mode, "no-knowledge");
+
+  const finish = await execFileAsync(process.execPath, [
+    cliPath,
+    "finish",
+    projectRoot,
+    "完成 HTTP 调用封装"
+  ]);
+  assert.match(finish.stdout, /任务知识沉淀完成/);
+  assert.equal((await fs.readdir(path.join(projectRoot, ".notra", "sessions"))).some((name) => name.endsWith(".md")), true);
+
+  const finishJson = await execFileAsync(process.execPath, [
+    cliPath,
+    "finish",
+    projectRoot,
+    "完成 HTTP 调用封装",
+    "--json"
+  ]);
+  const finishPayload = JSON.parse(finishJson.stdout);
+  assert.equal(finishPayload.ok, true);
+  assert.equal(typeof finishPayload.lint.summary.issue_count, "number");
+
+  const doctor = await execFileAsync(process.execPath, [cliPath, "doctor", projectRoot]);
+  assert.match(doctor.stdout, /Notra doctor/);
+
+  const doctorJson = await execFileAsync(process.execPath, [cliPath, "doctor", projectRoot, "--json"]);
+  const doctorPayload = JSON.parse(doctorJson.stdout);
+  assert.equal(Array.isArray(doctorPayload.checks), true);
+  assert.equal(typeof doctorPayload.summary.fail, "number");
 });
 
 async function createSampleProject() {

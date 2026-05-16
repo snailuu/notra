@@ -213,33 +213,46 @@ notra init --claude --codex --agents
 .agents/skills/
 ```
 
-### 6. 初始化目标项目知识库
+### 6. 初始化目标项目
 
-安装工具后，还需要对目标项目执行知识库初始化：
+安装工具后，推荐用一站式初始化入口：
+
+```bash
+notra init
+```
+
+该命令会安装 Notra 运行脚本与默认平台技能，并为当前项目初始化 `.notra/` 知识库。也可以显式指定项目目录：
+
+```bash
+notra init --project-root <project-root>
+```
+
+如果只想初始化项目知识库，可以继续使用兼容命令：
 
 ```bash
 notra project-init <project-root>
-```
-
-或者在 Codex 中使用：
-
-```text
-notra:notra-init
 ```
 
 初始化后，目标项目根目录会出现 `.notra/`。只有存在这个目录的项目才会进入知识库流程；未初始化项目会返回 `mode: no-knowledge` 并跳过扫描和沉淀。
 
 ## 快速开始
 
-初始化后，可以直接用 `notra` CLI 操作：
+推荐的日常 CLI 流程：
 
 ```bash
-notra project-init <project-root>
-notra preflight <project-root> "实现 HTTP 调用"
-notra auto-crystallize <project-root> <auto-crystallize-input.json>
-notra lint <project-root>
-notra govern <project-root>
-notra serve <project-root> 8124
+notra init
+notra start "实现 HTTP 调用"
+notra finish "完成 HTTP 调用封装"
+notra status
+notra doctor
+```
+
+需要机器可读输出时加 `--json`：
+
+```bash
+notra start "实现 HTTP 调用" --json
+notra finish "完成 HTTP 调用封装" --json
+notra status --json
 ```
 
 如果命令不传 `<project-root>`，CLI 会使用当前工作目录。
@@ -250,15 +263,25 @@ notra serve <project-root> 8124
 
 ### 使用场景
 
+CLI 推荐入口：
+
+- `notra init`：一站式安装平台技能并初始化当前项目 `.notra/` 知识库。
+- `notra start`：开始开发任务前使用，用来查找匹配的实践、推荐方案和本地 evidence hints。
+- `notra finish`：任务结束后，根据任务描述、变更文件和推荐命中自动推断知识沉淀。
+- `notra status`：只读查看当前项目知识库状态、稳定/孵化节点数量和最近 session。
+- `notra doctor`：诊断 Notra 配置、知识库、图谱和技能安装状态。
+
+技能包入口：
+
 - `notra-init`：首次为当前项目创建 `.notra/` 知识库时使用。
-- `notra-preflight`：开始开发任务前使用，用来查找匹配的实践、推荐方案和本地 evidence hints。
-- `notra-status`：只读查看当前项目知识库状态、稳定/孵化节点数量和最近 session 时使用。
-- `notra-graph`：需要重新生成 `.notra/graph/` 图谱数据和页面资源时使用。
+- `notra-preflight`：开始开发任务前查找匹配实践和推荐方案。
+- `notra-status`：查看当前项目知识库状态。
+- `notra-graph`：重新生成 `.notra/graph/` 图谱数据和页面资源。
 - `notra-crystallize`：明确知道要记录 session、采纳节点、创建候选节点或更新稳定知识时使用。
-- `notra-auto-crystallize`：任务结束后，根据任务描述、变更文件和推荐命中自动推断知识沉淀时使用。
-- `notra-lint`：只读检查推荐池、证据覆盖、重复节点和知识一致性问题时使用。
-- `notra-govern`：自动执行可逆治理动作时使用，例如转正孵化节点、打回推荐池外方案或标记重复节点。
-- `notra-serve`：本地预览项目知识图谱页面时使用。
+- `notra-auto-crystallize`：任务结束后自动推断知识沉淀。
+- `notra-lint`：只读检查推荐池、证据覆盖、重复节点和知识一致性问题。
+- `notra-govern`：自动执行可逆治理动作，例如转正孵化节点、打回推荐池外方案或标记重复节点。
+- `notra-serve`：本地预览项目知识图谱页面。
 
 Codex 中技能名带 `notra:` 前缀，例如 `notra:notra-init`；Claude Code 中直接使用 `notra-init`。
 
@@ -325,13 +348,13 @@ notra-serve
 
 ## 常用流程
 
-### 1. 初始化项目知识库
+### 1. 一站式初始化
 
 ```bash
-notra project-init <project-root>
+notra init
 ```
 
-会在目标项目中创建 `.notra/`，包括：
+会安装默认平台技能，并在目标项目中创建 `.notra/`，包括：
 
 - `project-profile.md`
 - `practices/`
@@ -345,43 +368,42 @@ notra project-init <project-root>
 - `.obsidian/`
 - `open-graph.cmd`
 
-如果项目没有初始化，`notra:preflight` 和 `notra:auto-crystallize` 会返回 `mode: no-knowledge`，不会扫描代码，也不会创建知识库。
-
-### 2. 任务开始前预检
+只初始化知识库时，可以使用兼容命令：
 
 ```bash
-notra preflight <project-root> "实现 HTTP 调用"
+notra project-init <project-root>
 ```
 
-预检会优先查 `.notra/`：
+如果项目没有初始化，`notra start` 和 `notra finish` 会返回 `mode: no-knowledge`，不会扫描代码，也不会创建知识库。
 
-- 命中已有实践时返回 `mode: knowledge-hit`。
-- 没命中但项目已初始化时返回 `mode: needs-project-scan`，并给出有限的源码 evidence hints。
-- 项目未初始化时返回 `mode: no-knowledge`。
+### 2. 任务开始前检索
 
-为了控制上下文大小，默认只返回：
+```bash
+notra start "实现 HTTP 调用"
+```
 
-- Top 5 practices
-- 每个节点最多 5 条 evidence 预览
-- 每类扫描 hint 最多 5 条
+`start` 会优先查 `.notra/`：
 
-### 3. 任务结束后自动沉淀
+- 命中已有实践时返回推荐实践、方案和 evidence hints。
+- 没命中但项目已初始化时返回项目扫描线索。
+- 项目未初始化时提示运行 `notra init`。
+
+需要机器可读结果时：
+
+```bash
+notra start "实现 HTTP 调用" --json
+```
+
+### 3. 任务结束后沉淀
+
+```bash
+notra finish "完成 HTTP 调用封装"
+```
+
+`finish` 会自动执行知识沉淀、lint 和状态汇总。需要显式 JSON 输入时仍可使用底层命令：
 
 ```bash
 notra auto-crystallize <project-root> <auto-crystallize-input.json>
-```
-
-输入示例：
-
-```json
-{
-  "sessionId": "session-YYYY-MM-DD-topic",
-  "title": "本轮任务标题",
-  "topic": "任务主题",
-  "taskText": "任务描述",
-  "decisionSummary": "本轮关键决策。",
-  "touchedFiles": ["src/example.ts"]
-}
 ```
 
 行为：
