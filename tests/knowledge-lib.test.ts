@@ -9,7 +9,7 @@ import {
   computeFinalScore,
   parseFrontmatterBlock
 } from "../dist/core/knowledge/graph-model.js";
-import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
+import { createInitializedSampleKnowledge } from "./sample-project-fixture.ts";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-knowledge-lib-fixture-");
 
@@ -37,7 +37,7 @@ session_refs: [session-2026-04-23-sample]
 用于测试。
 `;
 
-  const document = parseFrontmatterBlock(source);
+  const document = parseFrontmatterBlock(source) as any;
 
   assert.equal(document.data.practice, "practice-sample");
   assert.equal(document.data.base_score, 42);
@@ -50,7 +50,7 @@ session_refs: [session-2026-04-23-sample]
 });
 
 test("buildProjectGraphFromDirectory loads root project profile and incubating nodes", async () => {
-  const graph = await buildProjectGraphFromDirectory(fixtureRoot);
+  const graph = await buildProjectGraphFromDirectory(fixtureRoot) as any;
 
   assert.equal(path.isAbsolute(graph.knowledge_root), false);
   assert.equal(graph.knowledge_root, ".");
@@ -97,7 +97,7 @@ test("buildProjectGraphFromDirectory ranks recommendation pools with usage adjus
     evidence: "src/api/low.ts"
   });
 
-  const graph = await buildProjectGraphFromDirectory(knowledgeRoot);
+  const graph = await buildProjectGraphFromDirectory(knowledgeRoot) as any;
   const practice = graph.nodes.find((node) => node.id === "practice-http-client");
   const adoptedOption = graph.nodes.find((node) => node.id === "option-unified-client");
 
@@ -159,7 +159,7 @@ test("buildProjectGraphFromDirectory marks promotion and eviction candidates", a
     "utf8"
   );
 
-  const graph = await buildProjectGraphFromDirectory(knowledgeRoot);
+  const graph = await buildProjectGraphFromDirectory(knowledgeRoot) as any;
   const practice = graph.nodes.find((node) => node.id === "practice-http-client");
   const promotedOption = graph.nodes.find((node) => node.id === "option-incubating-adopted");
 

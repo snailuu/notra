@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 import { autoCrystallizeSession } from "../dist/core/session/auto-crystallize.js";
 import { runPreflight } from "../dist/core/session/preflight.js";
-import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
+import { createInitializedSampleProject } from "./sample-project-fixture.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,7 +26,7 @@ test("autoCrystallizeSession skips project knowledge when notra-init has not run
     title: "未初始化项目不沉淀知识",
     taskText: "实现一个普通功能",
     touchedFiles: ["src/example.ts"]
-  });
+  }) as any;
 
   assert.equal(result.mode, "no-knowledge");
   assert.equal(result.skipped, true);

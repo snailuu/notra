@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildProjectGraphArtifacts } from "../dist/core/graph/build.js";
-import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
+import { createInitializedSampleKnowledge } from "./sample-project-fixture.ts";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-graph-build-fixture-");
 

@@ -19,7 +19,7 @@ const packageJson = JSON.parse(await fs.readFile(path.join(root, "package.json")
 test("normalizePlatforms defaults to shared agents skills", () => {
   assert.deepEqual(normalizePlatforms([]), ["agents"]);
   assert.deepEqual(normalizePlatforms(["all"]), ["claude", "codex", "agents"]);
-  assert.throws(() => normalizePlatforms(["cursor"]), /不支持的平台/);
+  assert.throws(() => normalizePlatforms(["cursor" as any]), /不支持的平台/);
 });
 
 test("installNotraPlatforms writes runtime files and selected platform skills", async () => {

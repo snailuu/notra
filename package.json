@@ -27,8 +27,8 @@
     "codex:uninstall": "node scripts/install-codex-local-plugin.mjs uninstall",
     "prepack": "pnpm build:ts",
     "publish": "npm publish",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build:ts && node --experimental-test-isolation=none --test tests/skill-shell.test.mjs tests/plugin-command-shell.test.mjs tests/npm-cli.test.mjs tests/codex-local-plugin-install.test.mjs tests/content-sanitization.test.mjs tests/knowledge-lib.test.mjs tests/preflight.test.mjs tests/lint.test.mjs tests/governance.test.mjs tests/governance-api.test.mjs tests/init.test.mjs tests/graph-build.test.mjs tests/status.test.mjs tests/crystallize.test.mjs tests/auto-crystallize.test.mjs tests/project-graph-shell.test.mjs knowledge/tests/build-graph-data.test.mjs knowledge/tests/graph-runtime.test.mjs knowledge/tests/graph-shell.test.mjs knowledge/tests/serve-knowledge.test.mjs",
+    "typecheck": "pnpm build:ts && tsc -p tsconfig.test.json --noEmit",
+    "test": "pnpm build:ts && node --experimental-test-isolation=none --test tests/*.test.ts knowledge/tests/*.test.ts",
     "serve": "node knowledge/tools/serve-knowledge.mjs"
   },
   "devDependencies": {

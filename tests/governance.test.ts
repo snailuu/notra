@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { governProjectKnowledge } from "../dist/core/governance/govern.js";
 import { buildProjectGraphFromDirectory, parseFrontmatterBlock } from "../dist/core/knowledge/graph-model.js";
-import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
+import { createInitializedSampleKnowledge } from "./sample-project-fixture.ts";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-knowledge-govern-fixture-");
 
@@ -107,7 +107,7 @@ test("governProjectKnowledge rebuilds graph data after write actions", async () 
 
   await governProjectKnowledge(knowledgeRoot);
 
-  const graph = await buildProjectGraphFromDirectory(knowledgeRoot);
+  const graph = await buildProjectGraphFromDirectory(knowledgeRoot) as any;
   const promoted = graph.nodes.find((node) => node.id === "option-direct-call");
   assert.equal(promoted.maturity, "stable");
   assert.equal(await exists(path.join(knowledgeRoot, "graph", "graph-data.json")), true);
@@ -122,7 +122,7 @@ async function copyFixture(prefix) {
 
 async function readFrontmatter(filePath) {
   const source = await fs.readFile(filePath, "utf8");
-  return parseFrontmatterBlock(source).data;
+  return parseFrontmatterBlock(source).data as any;
 }
 
 async function writeUsageIndex(knowledgeRoot, entries) {

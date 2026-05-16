@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { parseFrontmatterBlock } from "../dist/core/knowledge/graph-model.js";
 import { createProjectKnowledgeServer } from "../dist/server/project-knowledge.js";
-import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
+import { createInitializedSampleProject } from "./sample-project-fixture.ts";
 
 test("project knowledge server rejects a node through the governance API", async () => {
   const projectRoot = await copyProject("project-knowledge-api-reject-");
@@ -25,7 +25,7 @@ test("project knowledge server rejects a node through the governance API", async
         reason: "manual-reject"
       })
     });
-    const payload = await response.json();
+    const payload = await response.json() as any;
 
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
@@ -143,7 +143,7 @@ async function copyProject(prefix) {
 }
 
 async function listen(server) {
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   return `http://127.0.0.1:${address.port}`;
 }
@@ -158,10 +158,10 @@ async function readGovernanceToken(baseUrl) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
 async function readFrontmatter(filePath) {
   const source = await fs.readFile(filePath, "utf8");
-  return parseFrontmatterBlock(source).data;
+  return parseFrontmatterBlock(source).data as any;
 }

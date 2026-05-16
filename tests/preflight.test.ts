@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { runPreflight } from "../dist/core/session/preflight.js";
-import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
+import { createInitializedSampleProject } from "./sample-project-fixture.ts";
 
 const fixtureProjectRoot = await createInitializedSampleProject("project-knowledge-preflight-fixture-");
 
