@@ -6,8 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { autoCrystallizeSession } from "../scripts/auto-crystallize-session.mjs";
-import { runPreflight } from "../scripts/preflight-session.mjs";
+import { autoCrystallizeSession } from "../dist/core/session/auto-crystallize.js";
+import { runPreflight } from "../dist/core/session/preflight.js";
 import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
 
 const execFileAsync = promisify(execFile);

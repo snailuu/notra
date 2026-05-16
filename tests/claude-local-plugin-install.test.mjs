@@ -12,7 +12,7 @@ import {
   uninstallClaudeLocalPlugin,
   upsertEnabledPlugin,
   upsertInstalledPlugins
-} from "../scripts/install-claude-local-plugin.mjs";
+} from "../dist/core/platform/claude-local.js";
 
 async function exists(targetPath) {
   try {

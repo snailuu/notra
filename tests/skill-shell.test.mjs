@@ -21,3 +21,9 @@ test("package.json exposes only npm maintenance scripts", () => {
   assert.equal(typeof packageJson.scripts.test, "string");
   assert.equal(typeof packageJson.scripts.publish, "string");
 });
+
+test("TypeScript build output does not keep stale flat scripts", () => {
+  assert.equal(fs.existsSync(path.join(root, "dist", "scripts")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist", "core")), true);
+  assert.equal(fs.existsSync(path.join(root, "dist", "server")), true);
+});

@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { crystallizeSession } from "../scripts/crystallize-session.mjs";
+import { crystallizeSession } from "../dist/core/session/crystallize.js";
 import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
 
 const execFileAsync = promisify(execFile);

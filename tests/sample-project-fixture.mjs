@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { initializeProjectKnowledge } from "../scripts/init-project-knowledge.mjs";
+import { initializeProjectKnowledge } from "../dist/core/project/init.js";
 
 const initFixtureRoot = path.resolve("tests", "fixtures", "init-sample-project");
 

@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { parseFrontmatterBlock } from "../scripts/knowledge-lib.mjs";
-import { createProjectKnowledgeServer } from "../scripts/serve-project-knowledge.mjs";
+import { parseFrontmatterBlock } from "../dist/core/knowledge/graph-model.js";
+import { createProjectKnowledgeServer } from "../dist/server/project-knowledge.js";
 import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
 
 test("project knowledge server rejects a node through the governance API", async () => {

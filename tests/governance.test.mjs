@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { governProjectKnowledge } from "../scripts/govern-project-knowledge.mjs";
-import { buildProjectGraphFromDirectory, parseFrontmatterBlock } from "../scripts/knowledge-lib.mjs";
+import { governProjectKnowledge } from "../dist/core/governance/govern.js";
+import { buildProjectGraphFromDirectory, parseFrontmatterBlock } from "../dist/core/knowledge/graph-model.js";
 import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-knowledge-govern-fixture-");

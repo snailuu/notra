@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildProjectGraphArtifacts } from "../scripts/build-project-graph-data.mjs";
+import { buildProjectGraphArtifacts } from "../dist/core/graph/build.js";
 import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-graph-build-fixture-");

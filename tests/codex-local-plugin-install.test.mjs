@@ -7,7 +7,7 @@ import {
   removePluginFromMarketplace,
   resolveCodexHomeLocalPaths,
   upsertHomeMarketplace
-} from "../scripts/install-codex-local-plugin.mjs";
+} from "../dist/core/platform/codex-local.js";
 
 test("resolveCodexHomeLocalPaths uses the home-local plugin convention", () => {
   const repositoryRoot = path.resolve("test-repository");

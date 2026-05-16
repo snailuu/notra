@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { lintProjectKnowledge } from "../scripts/lint-project-knowledge.mjs";
+import { lintProjectKnowledge } from "../dist/core/governance/lint.js";
 import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-knowledge-lint-fixture-");

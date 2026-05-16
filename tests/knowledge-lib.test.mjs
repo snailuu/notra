@@ -8,7 +8,7 @@ import {
   buildProjectGraphFromDirectory,
   computeFinalScore,
   parseFrontmatterBlock
-} from "../scripts/knowledge-lib.mjs";
+} from "../dist/core/knowledge/graph-model.js";
 import { createInitializedSampleKnowledge } from "./sample-project-fixture.mjs";
 
 const fixtureRoot = await createInitializedSampleKnowledge("project-knowledge-lib-fixture-");

@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import {
   installNotraPlatforms,
   normalizePlatforms
-} from "../scripts/platform-installers.mjs";
+} from "../dist/core/platform/install.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(".");

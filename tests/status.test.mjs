@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generateStatusReport } from "../scripts/status-report.mjs";
+import { generateStatusReport } from "../dist/core/project/status.js";
 import { createInitializedSampleProject } from "./sample-project-fixture.mjs";
 
 const fixtureRoot = await createInitializedSampleProject("project-knowledge-status-fixture-");

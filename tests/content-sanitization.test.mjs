@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const root = path.resolve(".");
-const ignoredDirectories = new Set([".git", "node_modules"]);
+const ignoredDirectories = new Set([".git", ".serena", "node_modules"]);
 const ignoredExtensions = new Set([".exe", ".zip", ".msi", ".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const forbiddenFragments = [
   ["d", "x", "m"].join(""),

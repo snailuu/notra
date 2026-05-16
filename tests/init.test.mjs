@@ -3,8 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
-import { initializeProjectKnowledge } from "../scripts/init-project-knowledge.mjs";
+import { initializeProjectKnowledge } from "../dist/core/project/init.js";
 
 const fixtureRoot = path.resolve("tests", "fixtures", "init-sample-project");
 
@@ -70,7 +71,7 @@ test("initializeProjectKnowledge bootstraps .notra from local code and docs", as
     "utf8"
   );
   const launcherPath = path.join(knowledgeRoot, "open-graph.cmd");
-  const launcherToolPath = path.join(knowledgeRoot, "tools", "serve-project-knowledge.mjs");
+  const launcherToolPath = path.join(knowledgeRoot, "tools", "notra-runtime", "server", "project-knowledge.js");
   const obsidianIndex = await fs.readFile(path.join(knowledgeRoot, "index.md"), "utf8");
   const obsidianLog = await fs.readFile(path.join(knowledgeRoot, "log.md"), "utf8");
   const practiceView = await fs.readFile(path.join(knowledgeRoot, "_views", "practices.md"), "utf8");
@@ -110,10 +111,11 @@ test("initializeProjectKnowledge bootstraps .notra from local code and docs", as
   assert.match(practiceView, /\[\[option-unified-client\]\]/);
   assert.equal(await fileExists(launcherPath), true);
   assert.equal(await fileExists(launcherToolPath), true);
+  assert.equal(await fileExists(path.join(knowledgeRoot, "tools", "notra-runtime", "core", "governance", "govern.js")), true);
+  await import(pathToFileURL(launcherToolPath).href);
 
   const launcher = await fs.readFile(launcherPath, "utf8");
-  assert.match(launcher, /serve-project-knowledge\.mjs/);
-  assert.match(launcher, /%~dp0tools\\serve-project-knowledge\.mjs/);
+  assert.match(launcher, /%~dp0tools\\notra-runtime\\server\\project-knowledge\.js/);
   assert.doesNotMatch(launcher, /universal-practice-knowledge-graph/);
   assert.doesNotMatch(launcher, /[A-Za-z]:\\/);
   assert.doesNotMatch(launcher, /set "NODE_EXE=.*[A-Za-z]:/);
