@@ -24,8 +24,9 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input = {})
   const incubatingNodes = input.incubatingNodes || [];
   const stableUpdates = input.stableUpdates || [];
   const adoptedNodeIds = input.adoptedNodeIds || [];
+  const userMemories = normalizeUserMemories(input);
 
-  if (!writeSession && incubatingNodes.length === 0 && stableUpdates.length === 0 && adoptedNodeIds.length === 0) {
+  if (!writeSession && incubatingNodes.length === 0 && stableUpdates.length === 0 && adoptedNodeIds.length === 0 && userMemories.length === 0) {
     return { mode: "no-op", knowledgeRoot };
   }
 
@@ -36,6 +37,8 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input = {})
     mode = "session+incubating";
   } else if (stableUpdates.length > 0 || adoptedNodeIds.length > 0) {
     mode = "session+stable-update";
+  } else if (userMemories.length > 0) {
+    mode = "session+user-memory";
   }
 
   if (writeSession) {
@@ -73,6 +76,10 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input = {})
     graphArtifacts = await buildProjectGraphArtifacts(knowledgeRoot);
   }
 
+  const userMemoryIds = userMemories.length > 0
+    ? await updateUserMemoryIndex(knowledgeRoot, sessionId, userMemories)
+    : [];
+
   await updateRuntimeState(knowledgeRoot, sessionId, mode);
   await refreshObsidianVault(knowledgeRoot, {
     graph: graphArtifacts?.graph,
@@ -80,7 +87,8 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input = {})
       mode,
       adopted: adoptedNodeIds,
       incubating: incubatingNodes.map((node) => node.id),
-      updated: stableUpdates.map((node) => node.id)
+      updated: stableUpdates.map((node) => node.id),
+      userMemory: userMemoryIds
     })
   });
 
@@ -90,7 +98,8 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input = {})
     sessionId,
     incubatingNodeIds: incubatingNodes.map((node) => node.id),
     updatedNodeIds: stableUpdates.map((node) => node.id),
-    adoptedNodeIds
+    adoptedNodeIds,
+    userMemoryIds
   };
 }
 
@@ -211,16 +220,83 @@ async function writeSessionDocument(knowledgeRoot, sessionId, input) {
       ...(input.stableUpdates || []).map((node) => node.id)
     ]),
     adopted_nodes: dedupeValues(input.adoptedNodeIds || []),
+    user_memory_ids: normalizeUserMemories(input).map((memory, index) => buildUserMemoryId(sessionId, memory, index)),
     status: "recorded"
   };
+  const userMemoryLines = buildUserMemoryLines(input);
   const body = {
     Goal: [input.goal || input.title || input.topic || "记录本轮任务"],
     Changes: [input.decisionSummary || "本轮未形成新的稳定知识。"],
-    Crystallization: [buildCrystallizationLine(input)]
+    Crystallization: [buildCrystallizationLine(input)],
+    ...(userMemoryLines.length > 0 ? { "User Memory": userMemoryLines } : {})
   };
 
   await fs.mkdir(path.dirname(sessionPath), { recursive: true });
   await fs.writeFile(sessionPath, renderMarkdownDocument(frontmatter, body), "utf8");
+}
+
+function normalizeUserMemories(input) {
+  return [
+    ...(Array.isArray(input.userMemories) ? input.userMemories : []),
+    ...(input.userMemory ? [input.userMemory] : [])
+  ]
+    .filter((memory) => memory && typeof memory === "object")
+    .map((memory) => ({
+      kind: memory.kind || "user-profile",
+      assistant_suggestion: memory.assistantSuggestion || memory.assistant_suggestion || "",
+      user_reply: memory.userReply || memory.user_reply || "",
+      inferred_preference: memory.inferredPreference || memory.inferred_preference || memory.preference || "",
+      confidence: Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : 0.6
+    }))
+    .filter((memory) => memory.inferred_preference || memory.user_reply || memory.assistant_suggestion);
+}
+
+function buildUserMemoryLines(input) {
+  const memories = normalizeUserMemories(input);
+  if (memories.length === 0) {
+    return [];
+  }
+
+  return memories.map((memory) => [
+    `- 类型：${memory.kind}`,
+    memory.assistant_suggestion ? `  - 模型建议：${memory.assistant_suggestion}` : null,
+    memory.user_reply ? `  - 用户回应：${memory.user_reply}` : null,
+    memory.inferred_preference ? `  - 画像提示：${memory.inferred_preference}` : null
+  ].filter(Boolean).join("\n"));
+}
+
+function buildUserMemoryId(sessionId, memory, index) {
+  const slug = String(memory.kind || "user-profile")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff-]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${sessionId}-user-memory-${slug || "profile"}-${index + 1}`;
+}
+
+async function updateUserMemoryIndex(knowledgeRoot, sessionId, memories) {
+  const memoryPath = path.join(knowledgeRoot, "state", "user-memory.json");
+  const existing = await readJson(memoryPath, { updated_at: null, memories: [] });
+  const createdAt = new Date().toISOString();
+  const nextMemories = memories.map((memory, index) => ({
+    id: buildUserMemoryId(sessionId, memory, index),
+    session_id: sessionId,
+    kind: memory.kind,
+    assistant_suggestion: memory.assistant_suggestion,
+    user_reply: memory.user_reply,
+    inferred_preference: memory.inferred_preference,
+    confidence: memory.confidence,
+    created_at: createdAt
+  }));
+  const byId = new Map([...(existing.memories || []), ...nextMemories].map((memory) => [memory.id, memory]));
+
+  await fs.mkdir(path.dirname(memoryPath), { recursive: true });
+  await fs.writeFile(
+    memoryPath,
+    `${JSON.stringify({ updated_at: createdAt, memories: [...byId.values()] }, null, 2)}\n`,
+    "utf8"
+  );
+
+  return nextMemories.map((memory) => memory.id);
 }
 
 function buildCrystallizationLine(input) {

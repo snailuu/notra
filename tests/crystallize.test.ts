@@ -200,6 +200,46 @@ test("crystallize CLI accepts a JSON input file for adopted and incubating updat
   assert.match(incubatingView, /\[\[option-cli-json-status-layer\]\]/);
 });
 
+test("crystallizeSession records user profile memory from reflection signals", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-user-memory-");
+
+  const result = await crystallizeSession(projectRoot, {
+    sessionId: "session-2026-04-24-user-memory",
+    title: "记录用户画像",
+    topic: "user-memory",
+    decisionSummary: "用户纠正了模型建议方向，需要形成后续头脑风暴提示。",
+    userMemory: {
+      kind: "intent-mismatch",
+      assistantSuggestion: "先补充产品功能描述。",
+      userReply: "先把测试文件从 mjs 迁移到 ts。",
+      inferredPreference: "用户倾向先完成可验证的工程阶段，再讨论功能包装。",
+      confidence: 0.8
+    }
+  });
+
+  assert.equal(result.mode, "session+user-memory");
+  assert.deepEqual(result.userMemoryIds, [
+    "session-2026-04-24-user-memory-user-memory-intent-mismatch-1"
+  ]);
+
+  const memory = JSON.parse(
+    await fs.readFile(path.join(projectRoot, ".notra", "state", "user-memory.json"), "utf8")
+  );
+  assert.equal(memory.memories.length, 1);
+  assert.equal(memory.memories[0].kind, "intent-mismatch");
+  assert.equal(
+    memory.memories[0].inferred_preference,
+    "用户倾向先完成可验证的工程阶段，再讨论功能包装。"
+  );
+
+  const session = await fs.readFile(
+    path.join(projectRoot, ".notra", "sessions", "session-2026-04-24-user-memory.md"),
+    "utf8"
+  );
+  assert.match(session, /user_memory_ids:/);
+  assert.match(session, /用户倾向先完成可验证的工程阶段/);
+});
+
 test("crystallizeSession rejects unsafe ids and node types before writing files", async () => {
   const projectRoot = await createInitializedSampleProject("project-knowledge-crystallize-invalid-");
 

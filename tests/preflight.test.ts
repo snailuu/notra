@@ -33,6 +33,41 @@ test("runPreflight returns matched practices and recommendation pool for task ke
   );
 });
 
+test("runPreflight returns recent user profile hints for brainstorming", async () => {
+  const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-user-profile-"));
+  const knowledgeRoot = path.join(projectRoot, ".notra");
+  await fs.cp(path.join(fixtureProjectRoot, ".notra"), knowledgeRoot, {
+    recursive: true
+  });
+  await fs.writeFile(
+    path.join(knowledgeRoot, "state", "user-memory.json"),
+    `${JSON.stringify(
+      {
+        updated_at: "2026-04-24T00:00:00.000Z",
+        memories: [
+          {
+            id: "memory-1",
+            session_id: "session-2026-04-24-user-memory",
+            kind: "intent-mismatch",
+            inferred_preference: "用户倾向先完成可验证的工程阶段，再讨论功能包装。",
+            confidence: 0.8
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = await runPreflight(projectRoot, "实现 HTTP 请求");
+
+  assert.deepEqual(result.userMemory.profileHints, [
+    "用户倾向先完成可验证的工程阶段，再讨论功能包装。"
+  ]);
+  assert.equal(result.userMemory.memories[0].kind, "intent-mismatch");
+});
+
 test("runPreflight keeps knowledge-hit output within a small context budget", async () => {
   const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-budget-"));
   const knowledgeRoot = path.join(projectRoot, ".notra");
