@@ -52,7 +52,7 @@ export function createProjectKnowledgeServer(projectRoot: string) {
         requestUrl.pathname === "/"
           ? "/graph/knowledge-graph.html"
           : requestUrl.pathname;
-      const safePath = path.normalize(relativePath).replace(/^(\.\.[/\\])+/, "");
+      const safePath = path.normalize(relativePath).replace(/^[/\\]+/, "").replace(/^(\.\.[/\\])+/, "");
       const absolutePath = path.resolve(knowledgeRoot, safePath);
 
       if (!isInsideDirectory(knowledgeRoot, absolutePath)) {
