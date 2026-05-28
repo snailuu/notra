@@ -157,7 +157,7 @@ test("crystallize CLI accepts a JSON input file for adopted and incubating updat
   );
 
   const { stdout } = await execFileAsync(process.execPath, [
-    path.resolve("scripts", "crystallize-session.mjs"),
+    path.resolve("plugins", "notra", "scripts", "notra-crystallize.mjs"),
     projectRoot,
     inputPath
   ]);
@@ -369,7 +369,7 @@ test("plugin crystallize runtime records user profile memory", async () => {
   );
 
   const { stdout } = await execFileAsync(process.execPath, [
-    path.resolve("plugins", "notra", "scripts", "crystallize-session.mjs"),
+    path.resolve("plugins", "notra", "scripts", "notra-crystallize.mjs"),
     projectRoot,
     inputPath
   ]);

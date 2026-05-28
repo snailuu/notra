@@ -331,7 +331,7 @@ test("auto crystallize CLI accepts JSON input and reports automatic metadata", a
   );
 
   const { stdout } = await execFileAsync(process.execPath, [
-    path.resolve("scripts", "auto-crystallize-session.mjs"),
+    path.resolve("plugins", "notra", "scripts", "notra-auto-crystallize.mjs"),
     projectRoot,
     inputPath
   ]);
@@ -346,7 +346,7 @@ test("auto crystallize CLI exits cleanly when project knowledge is missing", asy
   const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "project-knowledge-auto-cli-uninitialized-"));
 
   const { stdout } = await execFileAsync(process.execPath, [
-    path.resolve("scripts", "auto-crystallize-session.mjs"),
+    path.resolve("plugins", "notra", "scripts", "notra-auto-crystallize.mjs"),
     projectRoot,
     "实现一个普通功能"
   ]);

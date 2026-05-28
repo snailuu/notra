@@ -75,17 +75,9 @@ async function loadGraph() {
   return await response.json();
 }
 
-async function loadGovernanceSession() {
-  try {
-    const response = await fetch("/api/governance/session", { cache: "no-store" });
-    if (!response.ok) {
-      return null;
-    }
-    const payload = await response.json();
-    return payload.governanceToken || null;
-  } catch {
-    return null;
-  }
+function loadGovernanceSession() {
+  const meta = document.querySelector('meta[name="x-notra-governance-token"]');
+  return meta?.getAttribute("content") || null;
 }
 
 function bindEvents() {

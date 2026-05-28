@@ -23,6 +23,7 @@ export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input: 
   const taskText = buildTaskText(input);
   const touchedFileResult = await resolveTouchedFiles(target.projectRoot, input);
   const touchedFiles = touchedFileResult.files;
+  reportTouchedFilesWarning(touchedFileResult.warning);
   const preflight = await runPreflight(target.projectRoot, taskText);
   const adoptedNodeIds = Array.isArray(input.adoptedNodeIds)
     ? dedupeValues(input.adoptedNodeIds)
@@ -161,6 +162,21 @@ function buildTaskText(input) {
     .trim();
 }
 
+function reportTouchedFilesWarning(warning: any) {
+  if (!warning) {
+    return;
+  }
+  const errors = Array.isArray(warning.fallback_errors) ? warning.fallback_errors : [];
+  if (errors.length === 0) {
+    console.warn(`[notra] git touched-files 采集不完整 (${warning.code || "unknown"})`);
+    return;
+  }
+  console.warn(`[notra] git touched-files 采集不完整 (${warning.code || "unknown"})，fallback 命令也失败:`);
+  for (const err of errors) {
+    console.warn(`  - ${err.command}: ${err.message}`);
+  }
+}
+
 async function resolveTouchedFiles(projectRoot, input) {
   if (Array.isArray(input.touchedFiles) && input.touchedFiles.length > 0) {
     return { files: normalizeTouchedFiles(input.touchedFiles), warning: null };
@@ -194,13 +210,14 @@ async function collectGitTouchedFiles(projectRoot) {
       warning: null
     };
   } catch (error) {
-    const fallbackFiles = await collectFallbackGitTouchedFiles(projectRoot);
+    const fallback = await collectFallbackGitTouchedFiles(projectRoot);
     return {
-      files: fallbackFiles,
+      files: fallback.files,
       warning: {
         ...buildGitStatusWarning(error),
-        fallback: fallbackFiles.length > 0 ? "tracked-diff" : null,
-        incomplete: true
+        fallback: fallback.files.length > 0 ? "tracked-diff" : null,
+        incomplete: true,
+        fallback_errors: fallback.errors
       }
     };
   }
@@ -212,22 +229,31 @@ async function collectFallbackGitTouchedFiles(projectRoot) {
     collectGitFileList(projectRoot, ["diff", "--name-only"]),
     collectGitFileList(projectRoot, ["status", "--porcelain", "-uno"])
   ]);
-  return dedupeValues(outputs.flat());
+  return {
+    files: dedupeValues(outputs.flatMap((output) => output.files)),
+    errors: outputs.flatMap((output) => output.errors)
+  };
 }
 
-async function collectGitFileList(projectRoot, args) {
+async function collectGitFileList(projectRoot, args): Promise<{ files: string[]; errors: Array<{ command: string; message: string }> }> {
   try {
     const { stdout } = await execFileAsync("git", ["-C", projectRoot, ...args], {
       windowsHide: true,
       timeout: GIT_STATUS_TIMEOUT_MS,
       maxBuffer: GIT_STATUS_MAX_BUFFER_BYTES
     });
-    return stdout
-      .split(/\r?\n/)
-      .map((line) => args[0] === "status" ? parseGitStatusPath(line) : line.trim())
-      .filter(Boolean);
-  } catch {
-    return [];
+    return {
+      files: stdout
+        .split(/\r?\n/)
+        .map((line) => args[0] === "status" ? parseGitStatusPath(line) : line.trim())
+        .filter(Boolean) as string[],
+      errors: []
+    };
+  } catch (error) {
+    return {
+      files: [],
+      errors: [{ command: `git ${args.join(" ")}`, message: String((error as Error)?.message || error) }]
+    };
   }
 }
 
@@ -437,15 +463,19 @@ async function resolveExistingInputFile(projectRootOrKnowledgeRoot, inputFilePat
 }
 
 function buildInputPathCandidates(projectRootOrKnowledgeRoot, inputFilePath) {
-  if (path.isAbsolute(inputFilePath)) {
-    return [inputFilePath];
+  if (typeof inputFilePath !== "string" || inputFilePath.length === 0 || !inputFilePath.endsWith(".json")) {
+    return [];
   }
 
-  const resolvedProjectPath = path.resolve(projectRootOrKnowledgeRoot || process.cwd());
+  if (path.isAbsolute(inputFilePath)) {
+    return [path.resolve(inputFilePath)];
+  }
+
+  const projectRoot = path.resolve(projectRootOrKnowledgeRoot || process.cwd());
   return dedupeValues([
     path.resolve(process.cwd(), inputFilePath),
-    path.resolve(resolvedProjectPath, inputFilePath),
-    path.resolve(resolvedProjectPath, ".notra", inputFilePath)
+    path.resolve(projectRoot, inputFilePath),
+    path.resolve(projectRoot, ".notra", inputFilePath)
   ]);
 }
 

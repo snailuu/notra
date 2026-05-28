@@ -117,6 +117,9 @@ test("notra init wrapper stays runnable after copying the plugin into a cache-st
   const projectRoot = path.join(tempRoot, "sample-project");
 
   await fsp.cp(pluginRoot, cachedPluginRoot, { recursive: true });
+  // wrapper 引用 ../../../dist，相对 scripts 的上三级（与源仓库结构一致）
+  const distExpectedRoot = path.resolve(cachedPluginRoot, "..", "..", "dist");
+  await fsp.cp(path.join(root, "dist"), distExpectedRoot, { recursive: true });
   await fsp.cp(initFixtureRoot, projectRoot, { recursive: true });
 
   await import(pathToFileURL(path.join(cachedPluginRoot, "scripts", "notra-init.mjs")).href);
@@ -140,34 +143,11 @@ test("notra init wrapper stays runnable after copying the plugin into a cache-st
   assert.match(workflow, /notra:notra-graph/);
 });
 
-test("plugin script and graph resource copies stay in sync with root sources", async () => {
+test("plugin graph assets stay in sync with root sources", async () => {
   await assertDirectoriesMatch(
     path.join(root, "assets", "graph"),
     path.join(pluginRoot, "assets", "graph")
   );
-
-  for (const scriptName of [
-    "auto-crystallize-session.mjs",
-    "build-project-graph-data.mjs",
-    "build-project-graph-page.mjs",
-    "crystallize-session.mjs",
-    "evidence-paths.mjs",
-    "govern-project-knowledge.mjs",
-    "init-project-knowledge.mjs",
-    "knowledge-lib.mjs",
-    "lint-project-knowledge.mjs",
-    "obsidian-lib.mjs",
-    "preflight-session.mjs",
-    "scan-project.mjs",
-    "serve-project-knowledge.mjs",
-    "status-report.mjs"
-  ]) {
-    assert.equal(
-      await fsp.readFile(path.join(root, "scripts", scriptName), "utf8"),
-      await fsp.readFile(path.join(pluginRoot, "scripts", scriptName), "utf8"),
-      `${scriptName} should match plugin copy`
-    );
-  }
 });
 
 async function assertDirectoriesMatch(leftDirectory, rightDirectory) {

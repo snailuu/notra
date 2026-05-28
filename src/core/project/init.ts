@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildProjectGraphArtifacts } from "../graph/build.js";
+import { resolveNodePath } from "../knowledge/node-path.js";
 import {
   buildObsidianLinkSection,
   createLogEvent,
@@ -14,7 +15,8 @@ import { scanProject } from "./scan.js";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(scriptDirectory, "..", "..", "..");
-const templateDirectory = path.resolve(packageRoot, "templates");
+// dist/core/project -> dist -> dist/templates（由 build:ts 复制）
+const templateDirectory = path.resolve(scriptDirectory, "..", "..", "templates");
 const previewRuntimeRoot = path.join(packageRoot, "dist");
 const portablePreviewRoot = path.join("tools", "notra-runtime");
 const portablePreviewScriptPath = path.join(portablePreviewRoot, "server", "project-knowledge.js");
@@ -371,27 +373,6 @@ async function writeNodes(knowledgeRoot, nodes, context) {
   );
 }
 
-function resolveNodePath(knowledgeRoot, node) {
-  const baseDirectory =
-    node.maturity === "incubating"
-      ? path.join(knowledgeRoot, "incubating", `${node.type}s`)
-      : path.join(knowledgeRoot, `${node.type}s`);
-
-  switch (node.type) {
-    case "practice":
-      return path.join(baseDirectory, `${node.id}.md`);
-    case "option":
-      return path.join(baseDirectory, `${node.id}.md`);
-    case "context":
-      return path.join(baseDirectory, `${node.id}.md`);
-    case "constraint":
-      return path.join(baseDirectory, `${node.id}.md`);
-    case "rule":
-      return path.join(baseDirectory, `${node.id}.md`);
-    default:
-      throw new Error(`不支持的节点类型: ${node.type}`);
-  }
-}
 
 function buildNodeBody(node) {
   const sections: Record<string, any[]> = {

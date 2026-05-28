@@ -115,8 +115,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
 
     const platform = arg.slice(2);
-    if (arg.startsWith("--") && (isSupportedPlatform(platform) || platform === "all")) {
-      flags[platform] = true;
+    if (arg.startsWith("--") && isPlatformFlagName(platform)) {
+      setPlatformFlag(flags, platform);
       continue;
     }
 
@@ -124,6 +124,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return { command, flags, positionals };
+}
+
+function isPlatformFlagName(value: string): value is PlatformInput {
+  return value === "all" || isSupportedPlatform(value);
+}
+
+function setPlatformFlag(flags: CliFlags, platform: PlatformInput): void {
+  if (platform === "all") {
+    flags.all = true;
+    return;
+  }
+  flags[platform] = true;
 }
 
 export function collectPlatforms(flags: CliFlags): PlatformInput[] {

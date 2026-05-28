@@ -149,12 +149,12 @@ async function listen(server) {
 }
 
 async function readGovernanceToken(baseUrl) {
-  const response = await fetch(`${baseUrl}/api/governance/session`);
-  const payload = await response.json();
+  const response = await fetch(`${baseUrl}/graph/knowledge-graph.html`);
   assert.equal(response.status, 200);
-  assert.equal(payload.ok, true);
-  assert.equal(typeof payload.governanceToken, "string");
-  return payload.governanceToken;
+  const html = await response.text();
+  const match = html.match(/<meta name="x-notra-governance-token" content="([^"]+)">/);
+  assert.ok(match, `governance token meta should be injected, got: ${html.slice(0, 200)}`);
+  return match[1];
 }
 
 async function close(server) {

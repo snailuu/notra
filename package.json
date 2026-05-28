@@ -10,8 +10,6 @@
     "bin/",
     "dist/",
     "plugins/notra/",
-    "scripts/",
-    "templates/",
     "README.md",
     "LICENSE"
   ],
@@ -22,9 +20,9 @@
   "scripts": {
     "build": "pnpm build:ts && pnpm build:graph",
     "build:graph": "node knowledge/tools/build-graph-data.mjs",
-    "build:ts": "node scripts/clean-dist.mjs && tsc -p tsconfig.json",
-    "codex:install": "node scripts/install-codex-local-plugin.mjs",
-    "codex:uninstall": "node scripts/install-codex-local-plugin.mjs uninstall",
+    "build:ts": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/build-plugin-scripts.mjs",
+    "codex:install": "pnpm build:ts && node dist/core/platform/codex-local.js",
+    "codex:uninstall": "pnpm build:ts && node dist/core/platform/codex-local.js uninstall",
     "prepack": "pnpm build:ts",
     "publish": "npm publish",
     "audit:security": "pnpm audit --audit-level moderate --registry https://registry.npmjs.org",

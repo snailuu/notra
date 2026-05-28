@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type Platform = "claude" | "codex" | "agents";
 export type PlatformInput = Platform | "all";
@@ -41,9 +42,11 @@ export function isSupportedPlatform(platform: string): platform is Platform {
   return SUPPORTED_PLATFORMS.includes(platform as Platform);
 }
 
+const defaultPackageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
 export async function installNotraPlatforms({
   projectRoot = process.cwd(),
-  packageRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..", ".."),
+  packageRoot = defaultPackageRoot,
   platforms = [],
   dryRun = false,
   force = false,
@@ -70,6 +73,23 @@ export async function installNotraPlatforms({
       skipped
     });
   }
+
+  const distRoot = path.join(resolvedPackageRoot, "dist");
+  const distStat = await fs.stat(distRoot).catch(() => null);
+  if (!distStat?.isDirectory()) {
+    throw new Error(
+      `未找到构建产物 dist/: ${distRoot}。请先运行 pnpm build:ts，或确认 packageRoot 指向了包含 dist/ 的 notra 安装目录。`
+    );
+  }
+  await copyTree({
+    sourceRoot: distRoot,
+    targetRoot: path.join(runtimeRoot, "dist"),
+    dryRun,
+    force,
+    skipExisting,
+    writes,
+    skipped
+  });
 
   for (const platform of selectedPlatforms) {
     const skillDirectory = path.join(resolvedProjectRoot, ...PLATFORM_SKILL_DIRECTORIES[platform]);

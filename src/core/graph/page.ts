@@ -3,8 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.resolve(scriptDirectory, "..", "..", "..");
-const assetDirectory = path.resolve(packageRoot, "assets", "graph");
+// dist/core/graph -> dist -> dist/assets/graph（由 build:ts 复制）
+const assetDirectory = path.resolve(scriptDirectory, "..", "..", "assets", "graph");
 
 export async function buildProjectGraphPage(projectKnowledgeDir) {
   const graphDirectory = path.join(projectKnowledgeDir, "graph");

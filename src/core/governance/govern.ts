@@ -6,11 +6,13 @@ import { fileURLToPath } from "node:url";
 
 import { buildProjectGraphArtifacts } from "../graph/build.js";
 import { buildProjectGraphFromDirectory, parseFrontmatterBlock } from "../knowledge/graph-model.js";
+import { assertInsideKnowledgeRoot, resolveNodePath, validateNodeId } from "../knowledge/node-path.js";
+import { withStateLock } from "../knowledge/state-lock.js";
+import { atomicWriteFile, serializeYamlObject } from "../knowledge/yaml-render.js";
 import { createLogEvent, refreshObsidianVault } from "../obsidian/vault.js";
 import { lintProjectKnowledge } from "./lint.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
-const VALID_NODE_TYPES = new Set(["practice", "option", "context", "constraint", "rule"]);
 
 export async function governProjectKnowledge(projectRootOrKnowledgeRoot = process.cwd(), options: Record<string, any> = {}) {
   const knowledgeRoot = await resolveKnowledgeRoot(projectRootOrKnowledgeRoot);
@@ -186,92 +188,50 @@ function isStrongDuplicateIssue(issue) {
   return ["same-title", "same-summary"].includes(issue.duplicate_reason);
 }
 
+function renderMarkdownDocument(frontmatter: Record<string, unknown>, body: string): string {
+  return `---\n${serializeYamlObject(frontmatter).join("\n")}\n---\n\n${String(body || "").trim()}\n`;
+}
+
 async function moveNodeToMaturity(knowledgeRoot, node, maturity, updates = {}) {
-  const sourcePath = path.join(knowledgeRoot, node.source_path);
-  const targetPath = resolveNodePath(knowledgeRoot, {
-    ...node,
-    maturity
-  });
-  const source = await fs.readFile(sourcePath, "utf8");
-  const { data, body } = parseFrontmatterBlock(source);
-  const nextData = cleanupFrontmatter({
-    ...data,
-    ...updates,
-    maturity
-  });
-  const nextSource = renderMarkdownDocument(nextData, body);
+  // 接入 node-write 锁，避免与 crystallize 的节点写入并发冲突。
+  // 锁顺序见 src/core/knowledge/state-lock.ts 文件头注释。
+  return withStateLock(knowledgeRoot, "node-write", async () => {
+    const sourcePath = assertInsideKnowledgeRoot(
+      knowledgeRoot,
+      path.resolve(knowledgeRoot, node.source_path)
+    );
+    const targetPath = resolveNodePath(knowledgeRoot, {
+      ...node,
+      maturity
+    });
+    const source = await fs.readFile(sourcePath, "utf8");
+    const { data, body } = parseFrontmatterBlock(source);
+    const nextData = cleanupFrontmatter({
+      ...data,
+      ...updates,
+      maturity
+    });
+    const nextSource = renderMarkdownDocument(nextData, body);
 
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await fs.writeFile(targetPath, nextSource, "utf8");
-  if (path.resolve(sourcePath) !== path.resolve(targetPath)) {
-    await fs.unlink(sourcePath);
-  }
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await atomicWriteFile(targetPath, nextSource);
+    if (path.resolve(sourcePath) !== path.resolve(targetPath)) {
+      await fs.unlink(sourcePath);
+    }
 
-  return {
-    type: maturity === "stable" ? "promote" : "demote",
-    node_id: node.id,
-    from: path.relative(knowledgeRoot, sourcePath).replace(/\\/g, "/"),
-    to: path.relative(knowledgeRoot, targetPath).replace(/\\/g, "/")
-  };
+    return {
+      type: maturity === "stable" ? "promote" : "demote",
+      node_id: node.id,
+      from: path.relative(knowledgeRoot, sourcePath).replace(/\\/g, "/"),
+      to: path.relative(knowledgeRoot, targetPath).replace(/\\/g, "/")
+    };
+  });
 }
 
 function cleanupFrontmatter(data) {
   return Object.fromEntries(
     Object.entries(data).filter(([, value]) => value !== undefined && value !== null)
   );
-}
-
-function resolveNodePath(knowledgeRoot, node) {
-  const nodeId = validateNodeId(node.id);
-  const nodeType = validateNodeType(node.type);
-  const directory =
-    node.maturity === "incubating"
-      ? path.join(knowledgeRoot, "incubating", `${nodeType}s`)
-      : path.join(knowledgeRoot, `${nodeType}s`);
-  return assertInsideKnowledgeRoot(knowledgeRoot, path.join(directory, `${nodeId}.md`));
-}
-
-function renderMarkdownDocument(frontmatter, body) {
-  return `---\n${serializeYamlObject(frontmatter).join("\n")}\n---\n\n${String(body || "").trim()}\n`;
-}
-
-function serializeYamlObject(value, indentLevel = 0) {
-  return Object.entries(value).flatMap(([key, nestedValue]) =>
-    serializeYamlEntry(key, nestedValue, indentLevel)
-  );
-}
-
-function serializeYamlEntry(key, value, indentLevel) {
-  const indent = " ".repeat(indentLevel);
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return [`${indent}${key}: []`];
-    }
-    return [`${indent}${key}:`, ...value.map((item) => `${indent}  - ${serializeScalar(item)}`)];
-  }
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value);
-    if (entries.length === 0) {
-      return [`${indent}${key}: {}`];
-    }
-    return [
-      `${indent}${key}:`,
-      ...entries.flatMap(([childKey, childValue]) =>
-        serializeYamlEntry(childKey, childValue, indentLevel + 2)
-      )
-    ];
-  }
-  return [`${indent}${key}: ${serializeScalar(value)}`];
-}
-
-function serializeScalar(value) {
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (value === "") {
-    return '""';
-  }
-  return String(value);
 }
 
 function dedupeActions(actions) {
@@ -298,32 +258,6 @@ async function resolveKnowledgeRoot(projectRootOrKnowledgeRoot) {
   }
 
   throw new Error(`未找到 .notra: ${resolved}`);
-}
-
-function validateNodeId(nodeId) {
-  const value = String(nodeId || "").trim();
-  if (!/^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_.-]*$/.test(value)) {
-    throw new Error(`非法 nodeId: ${nodeId}`);
-  }
-  return value;
-}
-
-function validateNodeType(type) {
-  const value = String(type || "").trim();
-  if (!VALID_NODE_TYPES.has(value)) {
-    throw new Error(`非法节点类型: ${type}`);
-  }
-  return value;
-}
-
-function assertInsideKnowledgeRoot(knowledgeRoot, candidatePath) {
-  const resolvedRoot = path.resolve(knowledgeRoot);
-  const resolvedCandidate = path.resolve(candidatePath);
-  const relativePath = path.relative(resolvedRoot, resolvedCandidate);
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new Error(`路径越界: ${candidatePath}`);
-  }
-  return resolvedCandidate;
 }
 
 async function exists(filePath) {

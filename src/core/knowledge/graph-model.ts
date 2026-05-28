@@ -624,6 +624,25 @@ function parseYamlSubset(source): AnyRecord {
   return value;
 }
 
+function findFrontmatterKeySeparator(trimmed: string): number {
+  // 引号包裹的 key（如 "user memory": ...）应跨过引号内的所有冒号
+  if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+    const quote = trimmed[0];
+    const closingQuote = trimmed.indexOf(quote, 1);
+    if (closingQuote === -1) {
+      return -1;
+    }
+    const afterQuote = trimmed.indexOf(":", closingQuote + 1);
+    return afterQuote;
+  }
+  // 优先匹配 "key: value" 或 "key:"（末尾），避免 URL 协议中的 ":" 被错切
+  const match = trimmed.match(/:(\s|$)/);
+  if (match && match.index !== undefined) {
+    return match.index;
+  }
+  return trimmed.indexOf(":");
+}
+
 function parseBlock(lines, startIndex, indentLevel, containerType): { value: any; nextIndex: number } {
   const result: any = containerType === "array" ? [] : {};
   let index = startIndex;
@@ -667,7 +686,7 @@ function parseBlock(lines, startIndex, indentLevel, containerType): { value: any
       throw new Error(`对象块中出现非法数组项: ${rawLine}`);
     }
 
-    const separatorIndex = trimmed.indexOf(":");
+    const separatorIndex = findFrontmatterKeySeparator(trimmed);
     if (separatorIndex === -1) {
       throw new Error(`无法解析 frontmatter 行: ${rawLine}`);
     }
@@ -727,11 +746,11 @@ function parseScalar(rawValue) {
   if (/^-?\d+(\.\d+)?$/.test(rawValue)) {
     return Number(rawValue);
   }
-  if (
-    (rawValue.startsWith("'") && rawValue.endsWith("'")) ||
-    (rawValue.startsWith("\"") && rawValue.endsWith("\""))
-  ) {
+  if (rawValue.startsWith("'") && rawValue.endsWith("'") && rawValue.length >= 2) {
     return rawValue.slice(1, -1);
+  }
+  if (rawValue.startsWith("\"") && rawValue.endsWith("\"") && rawValue.length >= 2) {
+    return unescapeDoubleQuoted(rawValue.slice(1, -1));
   }
   if (rawValue.startsWith("[") && rawValue.endsWith("]")) {
     return parseInlineArray(rawValue);
@@ -745,6 +764,39 @@ function parseInlineArray(rawValue) {
     return [];
   }
   return content.split(",").map((item) => parseScalar(item.trim()));
+}
+
+function unescapeDoubleQuoted(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char !== "\\" || index + 1 >= value.length) {
+      result += char;
+      continue;
+    }
+    const next = value[index + 1];
+    switch (next) {
+      case "\\":
+        result += "\\";
+        break;
+      case "\"":
+        result += "\"";
+        break;
+      case "n":
+        result += "\n";
+        break;
+      case "r":
+        result += "\r";
+        break;
+      case "t":
+        result += "\t";
+        break;
+      default:
+        result += next;
+    }
+    index += 1;
+  }
+  return result;
 }
 
 function countIndent(line) {

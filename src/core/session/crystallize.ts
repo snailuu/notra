@@ -8,22 +8,25 @@ import { buildProjectGraphArtifacts } from "../graph/build.js";
 import { normalizeEvidencePaths } from "../knowledge/evidence.js";
 import { parseFrontmatterBlock } from "../knowledge/graph-model.js";
 import {
+  assertInsideKnowledgeRoot,
+  resolveNodePath,
+  validateNodeId,
+  validateNodeType,
+  validateSessionId
+} from "../knowledge/node-path.js";
+import { withStateLock } from "../knowledge/state-lock.js";
+import { atomicWriteFile, renderMarkdownDocument } from "../knowledge/yaml-render.js";
+import {
   buildObsidianLinkSection,
   createLogEvent,
   refreshObsidianVault
 } from "../obsidian/vault.js";
-
-const VALID_NODE_TYPES = new Set(["practice", "option", "context", "constraint", "rule"]);
-const NODE_ID_PATTERN = /^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_.-]*$/;
-const SESSION_ID_PATTERN = /^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_.-]*$/;
-const USER_MEMORY_LIMIT = 50;
-const USER_MEMORY_INPUT_LIMIT = 5;
-const USER_MEMORY_KIND_MAX_LENGTH = 64;
-const USER_MEMORY_FIELD_MAX_LENGTH = 500;
-const USER_MEMORY_LOCK_RETRIES = 50;
-const USER_MEMORY_LOCK_RETRY_MS = 20;
-const USER_MEMORY_LOCK_STALE_MS = 30000;
-const SECRET_VALUE_PATTERN = /(sk-[a-z0-9_-]{16,}|gh[pousr]_[a-z0-9_]{16,}|xox[baprs]-[a-z0-9-]{16,}|(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+)/giu;
+import {
+  buildUserMemoryId,
+  buildUserMemoryLines,
+  normalizeUserMemories,
+  updateUserMemoryIndex
+} from "./user-memory.js";
 
 export async function crystallizeSession(projectRootOrKnowledgeRoot, input: Record<string, any> = {}) {
   const knowledgeRoot = await resolveKnowledgeRoot(projectRootOrKnowledgeRoot);
@@ -187,15 +190,19 @@ async function resolveExistingInputFile(projectRootOrKnowledgeRoot, inputFilePat
 }
 
 function buildInputPathCandidates(projectRootOrKnowledgeRoot, inputFilePath) {
-  if (path.isAbsolute(inputFilePath)) {
-    return [inputFilePath];
+  if (typeof inputFilePath !== "string" || inputFilePath.length === 0 || !inputFilePath.endsWith(".json")) {
+    return [];
   }
 
-  const resolvedProjectPath = path.resolve(projectRootOrKnowledgeRoot || process.cwd());
+  if (path.isAbsolute(inputFilePath)) {
+    return [path.resolve(inputFilePath)];
+  }
+
+  const projectRoot = path.resolve(projectRootOrKnowledgeRoot || process.cwd());
   return dedupeValues([
     path.resolve(process.cwd(), inputFilePath),
-    path.resolve(resolvedProjectPath, inputFilePath),
-    path.resolve(resolvedProjectPath, ".notra", inputFilePath)
+    path.resolve(projectRoot, inputFilePath),
+    path.resolve(projectRoot, ".notra", inputFilePath)
   ]);
 }
 
@@ -203,7 +210,7 @@ function buildSessionId(topic) {
   const date = new Date().toISOString().slice(0, 10);
   const slug = String(topic || "session")
     .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff-]+/gu, "-")
+    .replace(/[^a-z0-9一-鿿-]+/gu, "-")
     .replace(/^-+|-+$/g, "");
   return `session-${date}-${slug || "session"}`;
 }
@@ -239,152 +246,7 @@ async function writeSessionDocument(knowledgeRoot, sessionId, input) {
   };
 
   await fs.mkdir(path.dirname(sessionPath), { recursive: true });
-  await fs.writeFile(sessionPath, renderMarkdownDocument(frontmatter, body), "utf8");
-}
-
-function normalizeUserMemories(input) {
-  return [
-    ...(Array.isArray(input.userMemories) ? input.userMemories : []),
-    ...(input.userMemory ? [input.userMemory] : [])
-  ]
-    .slice(0, USER_MEMORY_INPUT_LIMIT)
-    .filter((memory) => memory && typeof memory === "object")
-    .map((memory) => ({
-      kind: normalizeUserMemoryField(memory.kind || "user-profile", USER_MEMORY_KIND_MAX_LENGTH) || "user-profile",
-      assistant_suggestion: normalizeUserMemoryField(memory.assistantSuggestion || memory.assistant_suggestion || ""),
-      user_reply: normalizeUserMemoryField(memory.userReply || memory.user_reply || ""),
-      inferred_preference: normalizeUserMemoryField(memory.inferredPreference || memory.inferred_preference || memory.preference || ""),
-      confidence: normalizeConfidence(memory.confidence)
-    }))
-    .filter((memory) => memory.inferred_preference || memory.user_reply || memory.assistant_suggestion);
-}
-
-function normalizeUserMemoryField(value, maxLength = USER_MEMORY_FIELD_MAX_LENGTH) {
-  return String(value || "")
-    .replace(SECRET_VALUE_PATTERN, "[REDACTED]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength);
-}
-
-function normalizeConfidence(value) {
-  const confidence = Number(value);
-  if (!Number.isFinite(confidence)) {
-    return 0.6;
-  }
-  return Math.max(0, Math.min(confidence, 1));
-}
-
-function buildUserMemoryLines(input) {
-  const memories = normalizeUserMemories(input);
-  if (memories.length === 0) {
-    return [];
-  }
-
-  return memories.map((memory) => [
-    `- 类型：${memory.kind}`,
-    memory.assistant_suggestion ? `  - 模型建议：${memory.assistant_suggestion}` : null,
-    memory.user_reply ? `  - 用户回应：${memory.user_reply}` : null,
-    memory.inferred_preference ? `  - 画像提示：${memory.inferred_preference}` : null
-  ].filter(Boolean).join("\n"));
-}
-
-function buildUserMemoryId(sessionId, memory, index) {
-  const slug = String(memory.kind || "user-profile")
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff-]+/gu, "-")
-    .replace(/^-+|-+$/g, "");
-  return `${sessionId}-user-memory-${slug || "profile"}-${index + 1}`;
-}
-
-async function updateUserMemoryIndex(knowledgeRoot, sessionId, memories) {
-  const memoryPath = path.join(knowledgeRoot, "state", "user-memory.json");
-  const createdAt = new Date().toISOString();
-  const nextMemories = memories.map((memory, index) => ({
-    id: buildUserMemoryId(sessionId, memory, index),
-    session_id: sessionId,
-    kind: memory.kind,
-    assistant_suggestion: memory.assistant_suggestion,
-    user_reply: memory.user_reply,
-    inferred_preference: memory.inferred_preference,
-    confidence: memory.confidence,
-    created_at: createdAt
-  }));
-
-  await withUserMemoryLock(knowledgeRoot, async () => {
-    const existing = await readJson(memoryPath, { updated_at: null, memories: [] });
-    const byId = new Map([...(existing.memories || []), ...nextMemories].map((memory) => [memory.id, memory]));
-    const retainedMemories = retainRecentUserMemories([...byId.values()]);
-
-    await fs.mkdir(path.dirname(memoryPath), { recursive: true });
-    await fs.writeFile(
-      memoryPath,
-      `${JSON.stringify({ updated_at: createdAt, memories: retainedMemories }, null, 2)}\n`,
-      "utf8"
-    );
-  });
-
-  return nextMemories.map((memory) => memory.id);
-}
-
-async function withUserMemoryLock(knowledgeRoot, callback) {
-  const lockPath = path.join(knowledgeRoot, "state", ".user-memory.lock");
-  await fs.mkdir(path.dirname(lockPath), { recursive: true });
-  for (let attempt = 0; attempt <= USER_MEMORY_LOCK_RETRIES; attempt += 1) {
-    try {
-      await fs.mkdir(lockPath);
-      await writeUserMemoryLockMetadata(lockPath);
-      try {
-        return await callback();
-      } finally {
-        await fs.rm(lockPath, { recursive: true, force: true });
-      }
-    } catch (error) {
-      if (error.code !== "EEXIST") {
-        throw error;
-      }
-      const removedStaleLock = await removeStaleUserMemoryLock(lockPath);
-      if (!removedStaleLock && attempt === USER_MEMORY_LOCK_RETRIES) {
-        throw new Error(`用户画像写入锁等待超时: ${lockPath}`);
-      }
-      await delay(USER_MEMORY_LOCK_RETRY_MS);
-    }
-  }
-}
-
-async function writeUserMemoryLockMetadata(lockPath) {
-  await fs.writeFile(
-    path.join(lockPath, "owner.json"),
-    `${JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() }, null, 2)}\n`,
-    "utf8"
-  );
-}
-
-async function removeStaleUserMemoryLock(lockPath) {
-  try {
-    const stats = await fs.stat(lockPath);
-    if (Date.now() - stats.mtimeMs <= USER_MEMORY_LOCK_STALE_MS) {
-      return false;
-    }
-    await fs.rm(lockPath, { recursive: true, force: true });
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return true;
-    }
-    throw error;
-  }
-}
-
-function retainRecentUserMemories(memories) {
-  return memories
-    .filter((memory) => memory && typeof memory === "object")
-    .sort((left, right) => String(left.created_at || "").localeCompare(String(right.created_at || "")))
-    .slice(-USER_MEMORY_LIMIT);
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  await atomicWriteFile(sessionPath, renderMarkdownDocument(frontmatter, body));
 }
 
 function buildCrystallizationLine(input) {
@@ -403,77 +265,87 @@ async function writeKnowledgeNode(knowledgeRoot, node) {
     ...node,
     source_evidence: normalizeEvidencePaths(node.source_evidence || [])
   };
-  const nodePath = resolveNodePath(knowledgeRoot, normalizedNode);
-  const body = buildNodeBody(normalizedNode);
-  await fs.mkdir(path.dirname(nodePath), { recursive: true });
-  await fs.writeFile(nodePath, renderMarkdownDocument(normalizedNode, body), "utf8");
+  await withStateLock(knowledgeRoot, "node-write", async () => {
+    const nodePath = resolveNodePath(knowledgeRoot, normalizedNode);
+    const body = buildNodeBody(normalizedNode);
+    await fs.mkdir(path.dirname(nodePath), { recursive: true });
+    await atomicWriteFile(nodePath, renderMarkdownDocument(normalizedNode, body));
+  });
 }
 
 async function applyStableUpdate(knowledgeRoot, update, sessionId) {
   validateKnowledgeNodeInput(update);
-  const nodePath = await findExistingNodePath(knowledgeRoot, update.id, update.type);
-  const source = await fs.readFile(nodePath, "utf8");
-  const { data, body } = parseFrontmatterBlock(source);
-  const sections = parseMarkdownSections(body);
-  const frontmatter = {
-    ...data,
-    ...update,
-    id: data.id,
-    type: data.type,
-    title: update.title || data.title,
-    summary: update.summary || data.summary || "",
-    session_refs: dedupeValues([...(data.session_refs || []), ...(update.session_refs || []), sessionId]),
-    source_evidence: normalizeEvidencePaths([...(data.source_evidence || []), ...(update.source_evidence || [])])
-  };
+  await withStateLock(knowledgeRoot, "node-write", async () => {
+    const nodePath = await findExistingNodePath(knowledgeRoot, update.id, update.type);
+    const source = await fs.readFile(nodePath, "utf8");
+    const { data, body } = parseFrontmatterBlock(source);
+    const sections = parseMarkdownSections(body);
+    const frontmatter = {
+      ...data,
+      ...update,
+      id: data.id,
+      type: data.type,
+      title: update.title || data.title,
+      summary: update.summary || data.summary || "",
+      session_refs: dedupeValues([...(data.session_refs || []), ...(update.session_refs || []), sessionId]),
+      source_evidence: normalizeEvidencePaths([...(data.source_evidence || []), ...(update.source_evidence || [])])
+    };
 
-  if (update.summary) {
-    sections.Summary = [update.summary];
-  }
+    if (update.summary) {
+      sections.Summary = [update.summary];
+    }
 
-  await fs.writeFile(nodePath, renderMarkdownDocument(frontmatter, sections), "utf8");
+    await atomicWriteFile(nodePath, renderMarkdownDocument(frontmatter, sections));
+  });
 }
 
 async function updateUsageIndex(knowledgeRoot, { sessionId, adoptedNodeIds, mentionedNodeIds }) {
   const usagePath = path.join(knowledgeRoot, "state", "usage-index.json");
-  const rawUsage = await readJson(usagePath, {});
-  const usageIndex: Record<string, any> = rawUsage.entries || rawUsage;
+  await withStateLock(knowledgeRoot, "usage-index", async () => {
+    const rawUsage = await readJson(usagePath, {});
+    const usageIndex: Record<string, any> = rawUsage.entries || rawUsage;
 
-  for (const nodeId of dedupeValues(mentionedNodeIds)) {
-    usageIndex[nodeId] = usageIndex[nodeId] || {
-      session_mentions: 0,
-      adopted_count: 0,
-      last_used_at: extractDateFromSessionId(sessionId),
-      last_session_id: sessionId
-    };
-    usageIndex[nodeId].session_mentions += 1;
-    usageIndex[nodeId].last_used_at = extractDateFromSessionId(sessionId);
-    usageIndex[nodeId].last_session_id = sessionId;
-  }
+    for (const nodeId of dedupeValues(mentionedNodeIds)) {
+      usageIndex[nodeId] = usageIndex[nodeId] || {
+        session_mentions: 0,
+        adopted_count: 0,
+        last_used_at: extractDateFromSessionId(sessionId),
+        last_session_id: sessionId
+      };
+      usageIndex[nodeId].session_mentions += 1;
+      usageIndex[nodeId].last_used_at = extractDateFromSessionId(sessionId);
+      usageIndex[nodeId].last_session_id = sessionId;
+    }
 
-  for (const nodeId of dedupeValues(adoptedNodeIds)) {
-    usageIndex[nodeId] = usageIndex[nodeId] || {
-      session_mentions: 0,
-      adopted_count: 0,
-      last_used_at: extractDateFromSessionId(sessionId),
-      last_session_id: sessionId
-    };
-    usageIndex[nodeId].adopted_count += 1;
-    usageIndex[nodeId].last_used_at = extractDateFromSessionId(sessionId);
-    usageIndex[nodeId].last_session_id = sessionId;
-  }
+    for (const nodeId of dedupeValues(adoptedNodeIds)) {
+      usageIndex[nodeId] = usageIndex[nodeId] || {
+        session_mentions: 0,
+        adopted_count: 0,
+        last_used_at: extractDateFromSessionId(sessionId),
+        last_session_id: sessionId
+      };
+      usageIndex[nodeId].adopted_count += 1;
+      usageIndex[nodeId].last_used_at = extractDateFromSessionId(sessionId);
+      usageIndex[nodeId].last_session_id = sessionId;
+    }
 
-  await fs.writeFile(usagePath, `${JSON.stringify(usageIndex, null, 2)}\n`, "utf8");
+    await fs.mkdir(path.dirname(usagePath), { recursive: true });
+    await atomicWriteFile(usagePath, `${JSON.stringify(usageIndex, null, 2)}\n`);
+  });
 }
 
 async function updateRuntimeState(knowledgeRoot, sessionId, mode) {
   const runtimePath = path.join(knowledgeRoot, "state", "runtime-state.json");
-  const runtimeState = await readJson(runtimePath, {});
-  runtimeState.initialized = true;
-  runtimeState.last_session_id = sessionId;
-  runtimeState.last_crystallized_at = new Date().toISOString();
-  runtimeState.graph_dirty = false;
-  runtimeState.last_graph_build_at = runtimeState.last_graph_build_at || new Date().toISOString();
-  await fs.writeFile(runtimePath, `${JSON.stringify(runtimeState, null, 2)}\n`, "utf8");
+  await withStateLock(knowledgeRoot, "runtime-state", async () => {
+    const runtimeState = await readJson(runtimePath, {});
+    runtimeState.initialized = true;
+    runtimeState.last_session_id = sessionId;
+    runtimeState.last_crystallized_at = new Date().toISOString();
+    runtimeState.graph_dirty = false;
+    runtimeState.last_graph_build_at = runtimeState.last_graph_build_at || new Date().toISOString();
+    await fs.mkdir(path.dirname(runtimePath), { recursive: true });
+    await atomicWriteFile(runtimePath, `${JSON.stringify(runtimeState, null, 2)}\n`);
+  });
 }
 
 function extractDateFromSessionId(sessionId) {
@@ -498,54 +370,9 @@ async function findExistingNodePath(knowledgeRoot, nodeId, type) {
   throw new Error(`未找到节点文件: ${nodeId}`);
 }
 
-function resolveNodePath(knowledgeRoot, node) {
-  const safeNodeId = validateNodeId(node.id);
-  const safeType = validateNodeType(node.type);
-  const baseDirectory =
-    node.maturity === "incubating"
-      ? path.join(knowledgeRoot, "incubating", `${safeType}s`)
-      : path.join(knowledgeRoot, `${safeType}s`);
-
-  return assertInsideKnowledgeRoot(knowledgeRoot, path.join(baseDirectory, `${safeNodeId}.md`));
-}
-
 function validateKnowledgeNodeInput(node) {
   validateNodeId(node?.id);
   validateNodeType(node?.type);
-}
-
-function validateNodeId(nodeId) {
-  const value = String(nodeId || "").trim();
-  if (!NODE_ID_PATTERN.test(value)) {
-    throw new Error(`非法 nodeId: ${nodeId}`);
-  }
-  return value;
-}
-
-function validateNodeType(type) {
-  const value = String(type || "").trim();
-  if (!VALID_NODE_TYPES.has(value)) {
-    throw new Error(`非法节点类型: ${type}`);
-  }
-  return value;
-}
-
-function validateSessionId(sessionId) {
-  const value = String(sessionId || "").trim();
-  if (!SESSION_ID_PATTERN.test(value)) {
-    throw new Error(`非法 sessionId: ${sessionId}`);
-  }
-  return value;
-}
-
-function assertInsideKnowledgeRoot(knowledgeRoot, candidatePath) {
-  const resolvedRoot = path.resolve(knowledgeRoot);
-  const resolvedCandidate = path.resolve(candidatePath);
-  const relativePath = path.relative(resolvedRoot, resolvedCandidate);
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new Error(`路径越界: ${candidatePath}`);
-  }
-  return resolvedCandidate;
 }
 
 function buildNodeBody(node) {
@@ -603,74 +430,26 @@ function trimSectionBuffer(buffer) {
   return buffer.map((line) => line.trim()).filter(Boolean);
 }
 
-function renderMarkdownDocument(frontmatter, sections) {
-  const normalizedFrontmatter = { ...frontmatter };
-  delete normalizedFrontmatter.body;
-
-  const lines = ["---", ...serializeYamlObject(normalizedFrontmatter), "---", ""];
-
-  for (const [title, items] of Object.entries(sections) as [string, string[]][]) {
-    lines.push(`## ${title}`, "");
-    for (const item of items) {
-      lines.push(item);
-    }
-    lines.push("");
-  }
-
-  return `${lines.join("\n").trim()}\n`;
-}
-
-function serializeYamlObject(value, indentLevel = 0) {
-  return Object.entries(value).flatMap(([key, nestedValue]) =>
-    serializeYamlEntry(key, nestedValue, indentLevel)
-  );
-}
-
-function serializeYamlEntry(key, value, indentLevel) {
-  const indent = " ".repeat(indentLevel);
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return [`${indent}${key}: []`];
-    }
-    return [`${indent}${key}:`, ...value.map((item) => `${indent}  - ${serializeScalar(item)}`)];
-  }
-
-  if (value && typeof value === "object") {
-    const childEntries = Object.entries(value);
-    if (childEntries.length === 0) {
-      return [`${indent}${key}: {}`];
-    }
-    return [
-      `${indent}${key}:`,
-      ...childEntries.flatMap(([childKey, childValue]) =>
-        serializeYamlEntry(childKey, childValue, indentLevel + 2)
-      )
-    ];
-  }
-
-  return [`${indent}${key}: ${serializeScalar(value)}`];
-}
-
-function serializeScalar(value) {
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (value === null || value === undefined || value === "") {
-    return '""';
-  }
-  return String(value);
-}
-
 function dedupeValues(values): string[] {
   return Array.from(new Set((values || []).filter(Boolean).map(String)));
 }
 
 async function readJson(filePath, fallbackValue) {
+  let raw: string;
   try {
-    return JSON.parse(await fs.readFile(filePath, "utf8"));
-  } catch (error) {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch (error: any) {
     if (error.code === "ENOENT") {
+      return fallbackValue;
+    }
+    throw error;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error: any) {
+    if (error instanceof SyntaxError) {
+      // 状态文件损坏（可能是磁盘满、外部编辑、上次崩溃）。退到 fallback 并提示，避免后续操作永久挂死。
+      console.warn(`[notra] 状态文件 ${filePath} 解析失败，已回退到默认值：${error.message}`);
       return fallbackValue;
     }
     throw error;

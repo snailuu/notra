@@ -10,8 +10,8 @@ const packageJson = JSON.parse(
 
 test("repository exposes a root skill shell", () => {
   assert.equal(fs.existsSync(path.join(root, "SKILL.md")), true);
-  assert.equal(fs.existsSync(path.join(root, "templates")), true);
-  assert.equal(fs.existsSync(path.join(root, "scripts")), true);
+  assert.equal(fs.existsSync(path.join(root, "plugins", "notra", "templates")), true);
+  assert.equal(fs.existsSync(path.join(root, "plugins", "notra", "scripts")), true);
 });
 
 test("package.json exposes only npm maintenance scripts", () => {

@@ -24,6 +24,13 @@ export async function createInitializedSampleKnowledge(prefix) {
 
 async function seedSampleKnowledge(projectRoot) {
   const knowledgeRoot = path.join(projectRoot, ".notra");
+  const graphDir = path.join(knowledgeRoot, "graph");
+  await fs.mkdir(graphDir, { recursive: true });
+  await fs.writeFile(
+    path.join(graphDir, "knowledge-graph.html"),
+    "<!doctype html><html><head><title>Notra</title></head><body></body></html>",
+    "utf8"
+  );
   const profilePath = path.join(knowledgeRoot, "project-profile.md");
   const profile = await fs.readFile(profilePath, "utf8");
 
