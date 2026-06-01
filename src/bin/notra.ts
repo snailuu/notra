@@ -5,6 +5,8 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
+import { isCancel, multiselect, select } from "@clack/prompts";
+
 import { collectPlatforms, parseArgs, type CliFlags } from "../cli/args.js";
 import { CliError } from "../cli/errors.js";
 import {
@@ -26,7 +28,7 @@ import { printResult } from "../cli/output.js";
 import { buildProjectGraphArtifacts } from "../core/graph/build.js";
 import { governProjectKnowledge } from "../core/governance/govern.js";
 import { lintProjectKnowledge } from "../core/governance/lint.js";
-import { installNotraPlatforms, isSupportedPlatform, type PlatformInput } from "../core/platform/install.js";
+import { installNotraPlatforms, type PlatformInput } from "../core/platform/install.js";
 import { runDoctor } from "../core/project/doctor.js";
 import { initializeProjectKnowledge } from "../core/project/init.js";
 import { generateStatusReport } from "../core/project/status.js";
@@ -212,17 +214,20 @@ async function resolveInitPlatforms(flags: CliFlags, interactive: boolean): Prom
     return platforms;
   }
 
-  const answer = await promptText(
-    "请选择要安装的平台 [agents/claude/codex/all]，默认 agents：",
-    "agents"
-  );
-  if (answer === "all") {
-    return ["all"];
+  const selected = await multiselect<PlatformInput>({
+    message: "请选择要安装的平台（空格多选，回车确认）",
+    options: [
+      { value: "agents", label: "agents", hint: "默认" },
+      { value: "claude", label: "claude" },
+      { value: "codex", label: "codex" }
+    ],
+    initialValues: ["agents"],
+    required: true
+  });
+  if (isCancel(selected)) {
+    throw new CliError("已取消初始化。", 1);
   }
-  return answer
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item): item is PlatformInput => Boolean(item) && (item === "all" || isSupportedPlatform(item)));
+  return selected;
 }
 
 async function resolveInitProjectKnowledge(flags: CliFlags, interactive: boolean) {
@@ -245,7 +250,15 @@ async function runWriteOperationWithConflictPrompt<T>(
       throw error;
     }
 
-    const action = await promptText("检测到已有文件内容不同，选择处理方式 [skip/force/abort]：", "abort");
+    const action = await select<"skip" | "force" | "abort">({
+      message: "检测到已有文件内容不同，选择处理方式",
+      options: [
+        { value: "skip", label: "skip", hint: "跳过冲突文件，保留已有内容" },
+        { value: "force", label: "force", hint: "覆盖已有文件" },
+        { value: "abort", label: "abort", hint: "取消初始化" }
+      ],
+      initialValue: "abort"
+    });
     if (action === "skip") {
       return await operation({ ...pickWriteOptions(flags), skipExisting: true });
     }
