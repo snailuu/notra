@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { collectVolatileEvidencePaths } from "../knowledge/evidence.js";
-import { buildProjectGraphFromDirectory, LIFECYCLE_POLICY } from "../knowledge/graph-model.js";
+import { buildProjectGraphFromDirectory, computeDaysSince, LIFECYCLE_POLICY } from "../knowledge/graph-model.js";
 
 export async function lintProjectKnowledge(projectRootOrKnowledgeRoot = process.cwd()) {
   const knowledgeRoot = await resolveKnowledgeRoot(projectRootOrKnowledgeRoot);
@@ -18,6 +18,7 @@ export async function lintProjectKnowledge(projectRootOrKnowledgeRoot = process.
     ...findMissingPracticeIssues(graph.nodes, nodeMap),
     ...findEmptyRecommendationPoolIssues(graph.nodes),
     ...findPromotionCandidateIssues(graph.nodes),
+    ...findColdStorageCandidateIssues(graph.nodes),
     ...findRecommendationPoolEvictionIssues(graph.nodes),
     ...findPossibleDuplicateNodeIssues(graph.nodes)
   ];
@@ -141,10 +142,32 @@ function findPromotionCandidateIssues(nodes) {
       severity: "info",
       node_id: node.id,
       node_type: node.type,
+      strong_count: Number(node.usage_stats?.strong_count ?? node.usage_stats?.adopted_count ?? 0),
+      promotion_strong_threshold: LIFECYCLE_POLICY.promotionStrongThreshold,
+      // 保留旧字段以兼容外部消费者（如 doctor/可视化），避免破坏 JSON 输出契约
       adopted_count: Number(node.usage_stats?.adopted_count || 0),
       promotion_adopted_threshold: LIFECYCLE_POLICY.promotionAdoptedThreshold,
       lifecycle_reasons: node.lifecycle_reasons || [],
-      message: "孵化节点已达到采纳阈值，可评估是否转入稳定推荐池。"
+      message: "孵化节点已达到强采纳阈值，可评估是否转入稳定推荐池。"
+    }));
+}
+
+function findColdStorageCandidateIssues(nodes) {
+  return nodes
+    .filter((node) => node.maturity === "stable")
+    .filter((node) => node.lifecycle_state === "cold-storage-candidate")
+    .map((node) => ({
+      code: "node-cold-storage-candidate",
+      severity: "info",
+      node_id: node.id,
+      node_type: node.type,
+      last_used_at: node.usage_stats?.last_used_at || null,
+      days_since_last_used: Number.isFinite(computeDaysSince(node.usage_stats?.last_used_at))
+        ? computeDaysSince(node.usage_stats?.last_used_at)
+        : null,
+      cold_storage_days: LIFECYCLE_POLICY.coldStorageDays,
+      lifecycle_reasons: node.lifecycle_reasons || [],
+      message: "稳定节点超过冷藏阈值未被实际采纳，可评估是否降级为孵化。"
     }));
 }
 

@@ -25,9 +25,15 @@ export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input: 
   const touchedFiles = touchedFileResult.files;
   reportTouchedFilesWarning(touchedFileResult.warning);
   const preflight = await runPreflight(target.projectRoot, taskText);
-  const adoptedNodeIds = Array.isArray(input.adoptedNodeIds)
-    ? dedupeValues(input.adoptedNodeIds)
-    : inferAdoptedNodeIds(preflight);
+  // 新协议：adopted 优先，老字段 adoptedNodeIds 兜底；agent 未声明时为空（走 weak 通道，不再自动推断）
+  const adoptedNodeIds = Array.isArray(input.adopted)
+    ? dedupeValues(input.adopted)
+    : Array.isArray(input.adoptedNodeIds)
+      ? dedupeValues(input.adoptedNodeIds)
+      : [];
+  const notApplicableNodeIds = Array.isArray(input.notApplicable)
+    ? dedupeValues(input.notApplicable)
+    : [];
   const incubatingNodes = Array.isArray(input.incubatingNodes)
     ? input.incubatingNodes
     : buildIncubatingNodes({
@@ -44,7 +50,9 @@ export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input: 
     taskText,
     decisionSummary: input.decisionSummary || taskText || "自动记录本轮任务知识沉淀。",
     touchedFiles,
-    adoptedNodeIds,
+    adopted: adoptedNodeIds,
+    notApplicable: notApplicableNodeIds,
+    preflight,
     incubatingNodes,
     stableUpdates: input.stableUpdates || []
   };
@@ -56,7 +64,8 @@ export async function autoCrystallizeSession(projectRootOrKnowledgeRoot, input: 
       preflightMode: preflight.mode,
       touchedFiles,
       touchedFilesWarning: touchedFileResult.warning,
-      inferredAdoptedNodeIds: adoptedNodeIds,
+      adoptedNodeIds,
+      notApplicableNodeIds,
       generatedIncubatingNodeIds: incubatingNodes.map((node) => node.id)
     }
   };
@@ -144,7 +153,8 @@ function buildNoKnowledgeResult(target) {
       preflightMode: "no-knowledge",
       touchedFiles: [],
       touchedFilesWarning: null,
-      inferredAdoptedNodeIds: [],
+      adoptedNodeIds: [],
+      notApplicableNodeIds: [],
       generatedIncubatingNodeIds: []
     }
   };
@@ -292,18 +302,6 @@ function normalizeTouchedFiles(files) {
   return normalizeEvidencePaths(files);
 }
 
-function inferAdoptedNodeIds(preflight) {
-  if (preflight.mode !== "knowledge-hit") {
-    return [];
-  }
-
-  return dedupeValues(
-    (preflight.matchedPractices || [])
-      .map((practice) => practice.recommended_option)
-      .filter(Boolean)
-  );
-}
-
 function buildIncubatingNodes({ input, taskText, touchedFiles, preflightMode }) {
   if (preflightMode === "knowledge-hit" || touchedFiles.length === 0) {
     return [];
@@ -349,12 +347,7 @@ function buildIncubatingNodes({ input, taskText, touchedFiles, preflightMode }) 
   ];
 }
 
-function buildIncubatingNodeMetadata({ input, taskText, touchedFiles }) {
-  const detectedPattern = detectLongRunningAutoTaskPattern({ input, taskText, touchedFiles });
-  if (detectedPattern) {
-    return detectedPattern;
-  }
-
+function buildIncubatingNodeMetadata({ input, taskText, touchedFiles: _touchedFiles }) {
   const slug = slugify(input.taskText || input.topic || input.title || taskText || "session");
   const title = input.title || input.topic || taskText || "新场景";
   const summary = input.decisionSummary || `从本轮任务中发现 ${title} 的候选实践。`;
@@ -367,53 +360,6 @@ function buildIncubatingNodeMetadata({ input, taskText, touchedFiles }) {
     practiceSummary: summary,
     optionSummary: summary,
     keywords: extractKeywords(taskText || title)
-  };
-}
-
-function detectLongRunningAutoTaskPattern({ input, taskText, touchedFiles }) {
-  const combinedText = [
-    input.title,
-    input.topic,
-    input.taskText,
-    input.decisionSummary,
-    taskText
-  ].filter(Boolean).join(" ").toLowerCase();
-  const normalizedFiles = (touchedFiles || []).map((filePath) => String(filePath || "").toLowerCase());
-  const hasSchedulerSignal =
-    /全局调度器|调度器|调度\s*core|scheduler|schedule/.test(combinedText) ||
-    normalizedFiles.some((filePath) => /scheduler|schedule/.test(filePath));
-  const hasAutoTaskSignal =
-    /自动任务|自动同步|自动|sync|tracking|轮询|定时/.test(combinedText) ||
-    normalizedFiles.some((filePath) => /sync|tracking|scheduler/.test(filePath));
-  const hasLifecycleBoundarySignal =
-    /页面生命周期|生命周期|页面.*绑定|登录后|登录态|用户信息|用户.*加载|全局初始化|lifecycle/.test(combinedText);
-
-  if (!hasSchedulerSignal || !hasAutoTaskSignal || !hasLifecycleBoundarySignal) {
-    return null;
-  }
-
-  return {
-    practiceId: "practice-long-running-auto-task-global-scheduler",
-    optionId: "option-login-ready-global-scheduler",
-    practiceTitle: "长周期自动任务应使用登录态就绪后的全局调度器",
-    optionTitle: "登录态就绪后初始化全局调度器",
-    practiceSummary:
-      "长周期自动任务不应绑定具体页面生命周期；应在登录态或用户信息就绪后初始化全局调度器，读取开关、上次执行时间等状态后按需执行。",
-    optionSummary:
-      "将调度 core 与页面接线分离，在登录态就绪后启动全局调度器，由调度器读取开关和上次执行时间并触发任务。",
-    keywords: [
-      "自动任务",
-      "自动同步",
-      "长周期任务",
-      "全局调度器",
-      "登录态",
-      "用户信息就绪",
-      "页面生命周期",
-      "调度 core",
-      "scheduler",
-      "lifecycle",
-      "sync"
-    ]
   };
 }
 

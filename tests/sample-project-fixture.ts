@@ -46,6 +46,9 @@ async function seedSampleKnowledge(projectRoot) {
         "option-unified-client": {
           session_mentions: 2,
           adopted_count: 1,
+          // Phase 1 反馈闭环：strong_count 缺失时由 graph-model lazy 迁移自 adopted_count；
+          // weak_count 显式给出让新公式 strong*3 + weak*1 = 1*3 + 2 = 5 与旧公式 1*3 + 2 = 5 一致
+          weak_count: 2,
           last_used_at: "2026-04-23",
           last_session_id: "session-2026-04-23-sample"
         }

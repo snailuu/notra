@@ -22,6 +22,12 @@ import {
   refreshObsidianVault
 } from "../obsidian/vault.js";
 import {
+  classifyAdoptionSignals,
+  extractRecommendedNodeIds,
+  loadNodeMapForIds,
+  type AdoptionObservation
+} from "./adoption-signal.js";
+import {
   buildUserMemoryId,
   buildUserMemoryLines,
   normalizeUserMemories,
@@ -33,7 +39,9 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input: Reco
   const writeSession = input.writeSession !== false;
   const incubatingNodes = input.incubatingNodes || [];
   const stableUpdates = input.stableUpdates || [];
-  const adoptedNodeIds = input.adoptedNodeIds || [];
+  // 新字段 adopted 优先，老字段 adoptedNodeIds 兜底
+  const adoptedNodeIds = dedupeValues(input.adopted || input.adoptedNodeIds || []);
+  const notApplicableNodeIds = dedupeValues(input.notApplicable || []);
   const userMemories = normalizeUserMemories(input);
 
   if (!writeSession && incubatingNodes.length === 0 && stableUpdates.length === 0 && adoptedNodeIds.length === 0 && userMemories.length === 0) {
@@ -77,16 +85,50 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input: Reco
   }
 
   let graphArtifacts = null;
-  if (adoptedNodeIds.length > 0 || incubatingNodes.length > 0 || stableUpdates.length > 0) {
+  let classification = {
+    strong: adoptedNodeIds,
+    weak: [] as string[],
+    notApplicable: notApplicableNodeIds,
+    observations: [] as AdoptionObservation[]
+  };
+
+  if (adoptedNodeIds.length > 0 || incubatingNodes.length > 0 || stableUpdates.length > 0 || notApplicableNodeIds.length > 0) {
+    // 有 preflight + touchedFiles 时做分类校验；否则沿用旧行为（adopted 全 strong）
+    if (input.preflight && Array.isArray(input.touchedFiles)) {
+      const normalizedTouched: string[] = (normalizeEvidencePaths(input.touchedFiles || []) || []).map(String);
+      const recommendedIds = extractRecommendedNodeIds(input.preflight);
+      const nodeMapIds = dedupeValues([
+        ...adoptedNodeIds,
+        ...notApplicableNodeIds,
+        ...recommendedIds
+      ]);
+      const nodeMap = await loadNodeMapForIds(knowledgeRoot, nodeMapIds);
+      classification = classifyAdoptionSignals({
+        preflight: input.preflight,
+        agentAdopted: adoptedNodeIds,
+        agentNotApplicable: notApplicableNodeIds,
+        touchedFiles: normalizedTouched,
+        nodeMap
+      });
+    }
+
     await updateUsageIndex(knowledgeRoot, {
       sessionId,
-      adoptedNodeIds,
+      strongNodeIds: classification.strong,
+      weakNodeIds: classification.weak,
+      notApplicableNodeIds: classification.notApplicable,
       mentionedNodeIds: dedupeValues([
         ...incubatingNodes.map((node) => node.id),
         ...stableUpdates.map((node) => node.id),
         ...adoptedNodeIds
       ])
     });
+    await appendAdoptionObservations(
+      knowledgeRoot,
+      sessionId,
+      classification.observations,
+      Array.isArray(input.touchedFiles) ? input.touchedFiles.length : 0
+    );
     graphArtifacts = await buildProjectGraphArtifacts(knowledgeRoot);
   }
 
@@ -233,7 +275,7 @@ async function writeSessionDocument(knowledgeRoot, sessionId, input) {
       ...(input.incubatingNodes || []).map((node) => node.id),
       ...(input.stableUpdates || []).map((node) => node.id)
     ]),
-    adopted_nodes: dedupeValues(input.adoptedNodeIds || []),
+    adopted_nodes: dedupeValues(input.adopted || input.adoptedNodeIds || []),
     user_memory_ids: normalizeUserMemories(input).map((memory, index) => buildUserMemoryId(sessionId, memory, index)),
     status: "recorded"
   };
@@ -299,39 +341,105 @@ async function applyStableUpdate(knowledgeRoot, update, sessionId) {
   });
 }
 
-async function updateUsageIndex(knowledgeRoot, { sessionId, adoptedNodeIds, mentionedNodeIds }) {
+async function updateUsageIndex(knowledgeRoot, {
+  sessionId,
+  strongNodeIds = [],
+  weakNodeIds = [],
+  notApplicableNodeIds = [],
+  mentionedNodeIds = []
+}: {
+  sessionId: string;
+  strongNodeIds?: string[];
+  weakNodeIds?: string[];
+  notApplicableNodeIds?: string[];
+  mentionedNodeIds?: string[];
+}) {
   const usagePath = path.join(knowledgeRoot, "state", "usage-index.json");
   await withStateLock(knowledgeRoot, "usage-index", async () => {
     const rawUsage = await readJson(usagePath, {});
     const usageIndex: Record<string, any> = rawUsage.entries || rawUsage;
+    const sessionDate = extractDateFromSessionId(sessionId);
 
     for (const nodeId of dedupeValues(mentionedNodeIds)) {
-      usageIndex[nodeId] = usageIndex[nodeId] || {
-        session_mentions: 0,
-        adopted_count: 0,
-        last_used_at: extractDateFromSessionId(sessionId),
-        last_session_id: sessionId
-      };
-      usageIndex[nodeId].session_mentions += 1;
-      usageIndex[nodeId].last_used_at = extractDateFromSessionId(sessionId);
-      usageIndex[nodeId].last_session_id = sessionId;
+      const entry = ensureUsageEntry(usageIndex, nodeId, sessionId, sessionDate);
+      entry.session_mentions += 1;
+      // mentioned 仅是被召回/出现过，不刷 last_used_at（保持原"实际活动"语义）
+      entry.last_session_id = sessionId;
     }
 
-    for (const nodeId of dedupeValues(adoptedNodeIds)) {
-      usageIndex[nodeId] = usageIndex[nodeId] || {
-        session_mentions: 0,
-        adopted_count: 0,
-        last_used_at: extractDateFromSessionId(sessionId),
-        last_session_id: sessionId
-      };
-      usageIndex[nodeId].adopted_count += 1;
-      usageIndex[nodeId].last_used_at = extractDateFromSessionId(sessionId);
-      usageIndex[nodeId].last_session_id = sessionId;
+    for (const nodeId of dedupeValues(strongNodeIds)) {
+      const entry = ensureUsageEntry(usageIndex, nodeId, sessionId, sessionDate);
+      entry.strong_count = (entry.strong_count ?? entry.adopted_count ?? 0) + 1;
+      // 维持 adopted_count 与 strong_count 同步，保证回滚到老代码后晋升判据仍然正确
+      entry.adopted_count = entry.strong_count;
+      entry.last_used_at = sessionDate;
+      entry.last_session_id = sessionId;
+    }
+
+    for (const nodeId of dedupeValues(weakNodeIds)) {
+      const entry = ensureUsageEntry(usageIndex, nodeId, sessionId, sessionDate);
+      entry.weak_count = (entry.weak_count || 0) + 1;
+      // weak 通道不刷 last_used_at（与 Phase 2 冷藏语义一致：仅 strong 才算活动）
+      entry.last_session_id = sessionId;
+    }
+
+    for (const nodeId of dedupeValues(notApplicableNodeIds)) {
+      const entry = ensureUsageEntry(usageIndex, nodeId, sessionId, sessionDate);
+      entry.not_applicable_count = (entry.not_applicable_count || 0) + 1;
+      entry.last_session_id = sessionId;
     }
 
     await fs.mkdir(path.dirname(usagePath), { recursive: true });
     await atomicWriteFile(usagePath, `${JSON.stringify(usageIndex, null, 2)}\n`);
   });
+}
+
+function ensureUsageEntry(usageIndex: Record<string, any>, nodeId: string, sessionId: string, sessionDate: string) {
+  if (!usageIndex[nodeId]) {
+    usageIndex[nodeId] = {
+      session_mentions: 0,
+      adopted_count: 0,
+      strong_count: 0,
+      weak_count: 0,
+      not_applicable_count: 0,
+      last_used_at: null,
+      last_session_id: sessionId
+    };
+  }
+  const entry = usageIndex[nodeId];
+  if (entry.strong_count == null) {
+    entry.strong_count = entry.adopted_count || 0;
+  }
+  if (entry.weak_count == null) {
+    entry.weak_count = 0;
+  }
+  if (entry.not_applicable_count == null) {
+    entry.not_applicable_count = 0;
+  }
+  return entry;
+}
+
+async function appendAdoptionObservations(
+  knowledgeRoot: string,
+  sessionId: string,
+  observations: AdoptionObservation[],
+  touchedFilesCount: number
+) {
+  if (!observations || observations.length === 0) {
+    return;
+  }
+  const logPath = path.join(knowledgeRoot, "state", "adoption_observations.jsonl");
+  const ts = new Date().toISOString();
+  const lines = observations
+    .map((observation) => JSON.stringify({
+      ts,
+      session_id: sessionId,
+      touched_files_count: touchedFilesCount,
+      ...observation
+    }))
+    .join("\n") + "\n";
+  await fs.mkdir(path.dirname(logPath), { recursive: true });
+  await fs.appendFile(logPath, lines, "utf8");
 }
 
 async function updateRuntimeState(knowledgeRoot, sessionId, mode) {

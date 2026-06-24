@@ -45,7 +45,37 @@ export async function governProjectKnowledge(projectRootOrKnowledgeRoot = proces
       continue;
     }
 
+    if (options.dryRun) {
+      actions.push({ type: "promote", node_id: node.id, reason: "strong-threshold-met", dry_run: true });
+      continue;
+    }
     actions.push(await promoteNode(knowledgeRoot, node));
+  }
+
+  for (const issue of report.issues.filter((item) => item.code === "node-cold-storage-candidate")) {
+    if (duplicateNodeIds.has(issue.node_id)) {
+      continue;
+    }
+
+    const node = nodeMap.get(issue.node_id);
+    if (!node || node.review_status === "rejected") {
+      continue;
+    }
+
+    if (options.dryRun) {
+      actions.push({
+        type: "cold-storage-demote",
+        node_id: node.id,
+        reason: "cold-storage",
+        dry_run: true,
+        last_used_at: node.usage_stats?.last_used_at || null
+      });
+      continue;
+    }
+    const action = await demoteColdStorageNode(knowledgeRoot, node);
+    if (action) {
+      actions.push(action);
+    }
   }
 
   for (const issue of report.issues.filter((item) => item.code === "recommendation-pool-eviction-candidate")) {
@@ -134,7 +164,42 @@ async function promoteNode(knowledgeRoot, node) {
     ...action,
     type: "promote",
     node_id: node.id,
-    reason: "adopted-threshold-met"
+    reason: "strong-threshold-met"
+  };
+}
+
+async function demoteColdStorageNode(knowledgeRoot, node) {
+  // 冷藏降级前先检查目标位置是否已存在同 id 节点，避免盲目覆盖
+  const targetPath = resolveNodePath(knowledgeRoot, { ...node, maturity: "incubating" });
+  if (await exists(targetPath) && path.resolve(targetPath) !== path.resolve(path.join(knowledgeRoot, node.source_path))) {
+    return {
+      type: "cold-storage-demote",
+      node_id: node.id,
+      reason: "cold-storage",
+      skipped: true,
+      skip_reason: "target-path-already-exists",
+      target_path: path.relative(knowledgeRoot, targetPath).replace(/\\/g, "/")
+    };
+  }
+
+  // lifecycle_history 以 JSON 字符串数组存储：yaml-render 仅支持 scalar 数组项；JSON 字符串可被消费方还原
+  const lifecycleEntry = JSON.stringify({
+    from: "stable",
+    to: "incubating",
+    reason: "cold-storage",
+    at: new Date().toISOString()
+  });
+  const existingHistory = Array.isArray(node.lifecycle_history) ? node.lifecycle_history : [];
+  const action = await moveNodeToMaturity(knowledgeRoot, node, "incubating", {
+    maturity: "incubating",
+    lifecycle_history: [...existingHistory, lifecycleEntry]
+  });
+
+  return {
+    ...action,
+    type: "cold-storage-demote",
+    node_id: node.id,
+    reason: "cold-storage"
   };
 }
 

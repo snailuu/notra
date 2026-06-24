@@ -31,7 +31,10 @@ const VALID_NODE_TYPES = new Set([
 
 export const LIFECYCLE_POLICY = {
   recommendationPoolLimit: 3,
-  promotionAdoptedThreshold: 3
+  promotionStrongThreshold: 3,
+  // 旧字段保留为别名，避免外部引用断裂；语义等同 promotionStrongThreshold
+  promotionAdoptedThreshold: 3,
+  coldStorageDays: 90
 };
 
 const RELATION_SPECS = {
@@ -55,9 +58,24 @@ export function computeFinalScore(baseScore, projectAdjustment = 0) {
 }
 
 export function computeUsageAdjustment(usageStats: AnyRecord = {}) {
-  const adoptedCount = Number(usageStats.adopted_count || 0);
-  const sessionMentions = Number(usageStats.session_mentions || 0);
-  return Math.min(adoptedCount * 3 + sessionMentions, 15);
+  // strong_count 缺失时退回 adopted_count 兜底（lazy 迁移）
+  const strongCount = Number(usageStats.strong_count ?? usageStats.adopted_count ?? 0);
+  const weakCount = Number(usageStats.weak_count || 0);
+  return Math.min(strongCount * 3 + weakCount * 1, 15);
+}
+
+// 接受 ISO date string（YYYY-MM-DD 或完整 ISO 时间戳）
+// now 可注入，便于测试
+export function computeDaysSince(dateStr: string | null | undefined, now: Date = new Date()): number {
+  if (!dateStr) {
+    return Infinity;
+  }
+  const then = new Date(dateStr);
+  if (Number.isNaN(then.getTime())) {
+    return Infinity;
+  }
+  const ms = now.getTime() - then.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
 export function computeEffectiveScore(baseScore, projectAdjustment = 0, usageAdjustment = 0) {
@@ -114,9 +132,18 @@ export async function buildProjectGraphFromDirectory(projectKnowledgeDir): Promi
     node.usage_stats = usageIndex[node.id] || {
       session_mentions: 0,
       adopted_count: 0,
+      strong_count: 0,
+      weak_count: 0,
+      not_applicable_count: 0,
       last_used_at: null,
       last_session_id: null
     };
+    // 兼容老数据：strong_count 缺失时用 adopted_count 兜底
+    if (node.usage_stats.strong_count == null) {
+      node.usage_stats.strong_count = node.usage_stats.adopted_count || 0;
+    }
+    node.usage_stats.weak_count = node.usage_stats.weak_count || 0;
+    node.usage_stats.not_applicable_count = node.usage_stats.not_applicable_count || 0;
     node.usage_adjustment = computeUsageAdjustment(node.usage_stats);
     attachLifecycleState(node);
   }
@@ -365,7 +392,8 @@ function normalizeNode(document): AnyRecord {
     source_evidence: asArray(document.source_evidence),
     session_refs: asArray(document.session_refs),
     scope: document.scope || null,
-    priority: document.priority || "default"
+    priority: document.priority || "default",
+    lifecycle_history: asArray(document.lifecycle_history)
   };
 }
 
@@ -459,15 +487,36 @@ function attachLifecycleState(node) {
     return;
   }
 
+  const strongCount = Number(
+    node.usage_stats?.strong_count ?? node.usage_stats?.adopted_count ?? 0
+  );
+
   if (
     node.maturity === "incubating" &&
-    Number(node.usage_stats?.adopted_count || 0) >= LIFECYCLE_POLICY.promotionAdoptedThreshold
+    strongCount >= LIFECYCLE_POLICY.promotionStrongThreshold
   ) {
-    reasons.push("adopted-threshold-met");
+    reasons.push("strong-threshold-met");
   }
 
-  node.lifecycle_state = reasons.length > 0 ? "promotion_candidate" : "active";
+  if (node.maturity === "stable") {
+    const daysSince = computeDaysSince(node.usage_stats?.last_used_at);
+    if (Number.isFinite(daysSince) && daysSince > LIFECYCLE_POLICY.coldStorageDays) {
+      reasons.push("cold-storage");
+    }
+  }
+
+  node.lifecycle_state = lifecycleStateFromReasons(reasons);
   node.lifecycle_reasons = reasons;
+}
+
+function lifecycleStateFromReasons(reasons: string[]): string {
+  if (reasons.includes("cold-storage")) {
+    return "cold-storage-candidate";
+  }
+  if (reasons.includes("strong-threshold-met")) {
+    return "promotion_candidate";
+  }
+  return "active";
 }
 
 function resolveRecommendationTier(optionNode) {

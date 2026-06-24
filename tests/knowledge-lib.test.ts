@@ -188,6 +188,8 @@ test("buildProjectGraphFromDirectory marks promotion and eviction candidates", a
         "option-incubating-adopted": {
           session_mentions: 4,
           adopted_count: 3,
+          // Phase 1：weak_count 显式给出，让新公式 strong*3+weak*1=13 与旧公式 3*3+4=13 一致
+          weak_count: 4,
           last_used_at: "2026-04-30",
           last_session_id: "session-lifecycle"
         }
@@ -204,7 +206,7 @@ test("buildProjectGraphFromDirectory marks promotion and eviction candidates", a
 
   assert.equal(promotedOption.maturity, "incubating");
   assert.equal(promotedOption.lifecycle_state, "promotion_candidate");
-  assert.equal(promotedOption.lifecycle_reasons.includes("adopted-threshold-met"), true);
+  assert.equal(promotedOption.lifecycle_reasons.includes("strong-threshold-met"), true);
   assert.deepEqual(practice.recommendation_pools["project-current"], [
     "option-unified-client",
     "option-incubating-adopted",
