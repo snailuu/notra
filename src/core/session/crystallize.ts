@@ -92,11 +92,20 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input: Reco
     observations: [] as AdoptionObservation[]
   };
 
-  if (adoptedNodeIds.length > 0 || incubatingNodes.length > 0 || stableUpdates.length > 0 || notApplicableNodeIds.length > 0) {
+  // preflight 命中但 agent 全缺声明（adopted/notApplicable 都空）时，
+  // 仍应记录 missing → weak 观测，避免"召回但无信号"的死区
+  const recommendedIds = input.preflight ? extractRecommendedNodeIds(input.preflight) : [];
+  const hasClassifiableInput =
+    adoptedNodeIds.length > 0
+    || incubatingNodes.length > 0
+    || stableUpdates.length > 0
+    || notApplicableNodeIds.length > 0
+    || recommendedIds.length > 0;
+
+  if (hasClassifiableInput) {
     // 有 preflight + touchedFiles 时做分类校验；否则沿用旧行为（adopted 全 strong）
     if (input.preflight && Array.isArray(input.touchedFiles)) {
       const normalizedTouched: string[] = (normalizeEvidencePaths(input.touchedFiles || []) || []).map(String);
-      const recommendedIds = extractRecommendedNodeIds(input.preflight);
       const nodeMapIds = dedupeValues([
         ...adoptedNodeIds,
         ...notApplicableNodeIds,
@@ -120,7 +129,8 @@ export async function crystallizeSession(projectRootOrKnowledgeRoot, input: Reco
       mentionedNodeIds: dedupeValues([
         ...incubatingNodes.map((node) => node.id),
         ...stableUpdates.map((node) => node.id),
-        ...adoptedNodeIds
+        ...adoptedNodeIds,
+        ...recommendedIds
       ])
     });
     await appendAdoptionObservations(

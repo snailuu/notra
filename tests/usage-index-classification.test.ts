@@ -177,6 +177,37 @@ test("legacy usage-index entries without strong_count are lazy-migrated", async 
   assert.equal(node.usage_stats.not_applicable_count, 0);
 });
 
+test("preflight hit with zero declarations still records missing → weak observations", async () => {
+  const projectRoot = await createInitializedSampleProject("project-knowledge-missing-weak-");
+  const knowledgeRoot = path.join(projectRoot, ".notra");
+
+  // 模拟 agent 既没声明 adopted 也没声明 notApplicable
+  // 但 preflight 命中：根据 SKILL 约定，应自动兜底为 weak 观测
+  await crystallizeSession(projectRoot, {
+    sessionId: "session-2026-06-24-missing",
+    title: "missing 兜底",
+    topic: "missing-fallback",
+    decisionSummary: "agent 忘记声明，应自动归类 missing → weak",
+    touchedFiles: ["src/api/client.ts"],
+    preflight: {
+      mode: "knowledge-hit",
+      matchedPractices: [{ recommended_option: "option-unified-client" }]
+    }
+  });
+
+  const log = await fs.readFile(path.join(knowledgeRoot, "state", "adoption_observations.jsonl"), "utf8");
+  const lines = log.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(lines.length, 1, "missing 场景应当写入一条观测");
+  assert.equal(lines[0].declared, "missing");
+  assert.equal(lines[0].signal, "weak");
+
+  const usage = JSON.parse(await fs.readFile(path.join(knowledgeRoot, "state", "usage-index.json"), "utf8"));
+  // weak_count 从 fixture 起始 2 → 累加 1 = 3
+  assert.equal(usage["option-unified-client"].weak_count, 3);
+  // strong_count 保持 1（fixture lazy 迁移自 adopted_count）
+  assert.equal(usage["option-unified-client"].strong_count, 1);
+});
+
 test("adoption_observations.jsonl appends well-formed JSON lines", async () => {
   const projectRoot = await createInitializedSampleProject("project-knowledge-jsonl-");
   const knowledgeRoot = path.join(projectRoot, ".notra");
