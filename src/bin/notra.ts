@@ -21,13 +21,15 @@ import {
   formatLintSummary,
   formatProjectInitSummary,
   formatStartSummary,
-  formatStatusSummary
+  formatStatusSummary,
+  formatUpdateSummary
 } from "../cli/formatters.js";
 import { printHelp } from "../cli/help.js";
 import { printResult } from "../cli/output.js";
 import { buildProjectGraphArtifacts } from "../core/graph/build.js";
 import { governProjectKnowledge } from "../core/governance/govern.js";
 import { lintProjectKnowledge } from "../core/governance/lint.js";
+import { runUpdate, type PackageManager } from "../core/maintenance/update.js";
 import { installNotraPlatforms, type PlatformInput } from "../core/platform/install.js";
 import { runDoctor } from "../core/project/doctor.js";
 import { initializeProjectKnowledge } from "../core/project/init.js";
@@ -157,7 +159,32 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (command === "update" || command === "upgrade") {
+    const result = await runUpdate({
+      target: positionals[0] || "latest",
+      dryRun: Boolean(flags.dryRun),
+      packageManager: resolvePackageManagerFlag(flags.packageManager),
+      packageRoot
+    });
+    await printResult(result, { json: flags.json, formatter: formatUpdateSummary });
+    if (result.mode === "manual-fallback") {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   throw new CliError(`未知命令: ${command || ""}`.trim(), 2);
+}
+
+function resolvePackageManagerFlag(value: string | undefined): PackageManager | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.toLowerCase();
+  if (normalized === "pnpm" || normalized === "npm" || normalized === "yarn" || normalized === "bun") {
+    return normalized;
+  }
+  throw new CliError(`不支持的 --pm: ${value}（pnpm/npm/yarn/bun）`, 2);
 }
 
 async function runInit(flags: CliFlags) {

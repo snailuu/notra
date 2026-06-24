@@ -41,6 +41,7 @@ const distAllowList = new Set([
   "core/platform/install.js",
   "core/platform/claude-local.js",
   "core/platform/codex-local.js",
+  "core/maintenance/update.js",
   "core/project/doctor.js",
   "core/session/adoption-signal.js",
   "core/session/user-memory.js",

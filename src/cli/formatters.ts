@@ -331,3 +331,21 @@ export function formatGovernSummary(result: GovernReport): string {
     ...(r.actions ?? []).map((action) => `- ${action.type}: ${action.node_id}`)
   ].join("\n");
 }
+
+export function formatUpdateSummary(result: Record<string, any>): string {
+  const lines: string[] = ["notra update"];
+  lines.push(`当前版本: ${result.currentVersion ?? "unknown"}`);
+  lines.push(`目标版本: ${result.targetVersion ?? "unknown"}`);
+  if (result.packageManager) {
+    lines.push(`包管理器: ${result.packageManager}`);
+  }
+  if (result.command) {
+    lines.push(`命令: ${result.command}`);
+  }
+  if (result.manualHint && result.mode !== "dry-run" && !result.command) {
+    lines.push(`提示: ${result.manualHint}`);
+  }
+  lines.push("");
+  lines.push(result.message ?? "");
+  return lines.join("\n");
+}

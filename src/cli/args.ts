@@ -12,6 +12,7 @@ export interface CliFlags {
   input?: string;
   json?: boolean;
   noInteractive?: boolean;
+  packageManager?: string;
   platformOnly?: boolean;
   projectOnly?: boolean;
   projectRoot?: string;
@@ -111,6 +112,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--version" || arg === "-v") {
       flags.version = true;
+      continue;
+    }
+
+    if (arg === "--pm" || arg === "--package-manager") {
+      flags.packageManager = argv[index + 1];
+      index += 1;
       continue;
     }
 

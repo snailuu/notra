@@ -17,18 +17,20 @@ Advanced:
   notra govern [project-root]
   notra graph [project-root|knowledge-root]
   notra serve [project-root] [port]
+  notra update [latest|stable|x.y.z]  升级 notra 到最新或指定版本
 
 Options:
   --project-root, -C <path>  指定目标项目目录
   --json                    输出机器可读 JSON
   --yes, -y                 跳过确认，使用默认值
   --no-interactive          禁用交互式提示
-  --dry-run                 只预览写入内容
+  --dry-run                 只预览写入内容 / update 时只预览升级命令
   --force                   覆盖冲突文件
   --skip-existing           跳过冲突文件
   --platform-only           init 时只安装平台 skill/runtime
   --project-only            init 时只初始化 .notra 知识库
   --claude|--codex|--agents|--all  选择安装平台
+  --pm <pnpm|npm|yarn|bun>   update 时强制使用指定包管理器
   --strict                  doctor 存在失败项时返回非零退出码
   --version, -v             输出版本号
   --help, -h                输出帮助`);
