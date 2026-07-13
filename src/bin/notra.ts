@@ -99,7 +99,7 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (command === "doctor") {
-    const result = await runDoctor(resolveTarget(positionals[0], flags));
+    const result = await runDoctor(resolveTarget(positionals[0], flags), packageRoot);
     await printResult(result, { json: flags.json, formatter: formatDoctorSummary });
     if (flags.strict && result.summary.fail > 0) {
       process.exitCode = 1;

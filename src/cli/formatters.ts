@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { lintProjectKnowledge } from "../core/governance/lint.js";
 import type { governProjectKnowledge } from "../core/governance/govern.js";
 import type { buildProjectGraphArtifacts } from "../core/graph/build.js";
@@ -45,11 +47,33 @@ interface GraphJsonSummary {
 export function formatInitSummary(result: InitSummaryInput): string {
   const lines = ["Notra 初始化完成", "", `项目目录: ${result.projectRoot}`];
   if (result.platformInstall) {
+    const install = result.platformInstall;
+    const overwritten = install.writes.filter((write) => write.action === "overwrite");
+    const diverged = install.skipped.filter((skip) => skip.reason === "diverged");
     lines.push(
-      `平台配置: ${result.platformInstall.platforms.join(", ") || "未安装"}`,
-      `平台写入: ${result.platformInstall.writes.length}`,
-      `平台跳过: ${result.platformInstall.skipped.length}`
+      `平台配置: ${install.platforms.join(", ") || "未安装"}`,
+      `平台写入: ${install.writes.length}`,
+      `平台跳过: ${install.skipped.length}`
     );
+    // runtime 与 skill 分开报：覆盖用户地界的 skill 绝不能被算作「刷新运行时」
+    const runtimeRefreshed = overwritten.filter((write) => write.scope === "runtime");
+    const skillRefreshed = overwritten.filter((write) => write.scope === "skill");
+    if (runtimeRefreshed.length > 0) {
+      lines.push(`刷新运行时: ${runtimeRefreshed.length} 个文件`);
+    }
+    if (skillRefreshed.length > 0) {
+      lines.push(
+        `刷新 skill: ${skillRefreshed.length} 个文件`,
+        ...skillRefreshed.map((write) => `- ${path.relative(result.projectRoot, write.path)}`)
+      );
+    }
+    // 保留的文件必须逐条列出：静默跳过会让用户以为已升级到新版
+    if (diverged.length > 0) {
+      lines.push(
+        `保留本地改动: ${diverged.length} 个文件（已确认与 notra 写入时不同；如需换成新版，加 --force）`,
+        ...diverged.map((skip) => `- ${path.relative(result.projectRoot, skip.path)}`)
+      );
+    }
   }
   if (result.projectKnowledge) {
     const knowledge = result.projectKnowledge as ProjectInitResult & {
@@ -120,7 +144,7 @@ export function formatStartSummary(result: PreflightResult): string {
     return [
       "当前项目尚未初始化 Notra 知识库。",
       `项目目录: ${r.projectRoot}`,
-      "下一步: notra init"
+      "下一步: notra init --yes"
     ].join("\n");
   }
 
@@ -158,7 +182,7 @@ export function formatFinishSummary(result: FinishSummaryInput): string {
     return [
       "未沉淀知识：当前项目尚未初始化 Notra。",
       `项目目录: ${result.projectRoot}`,
-      "下一步: notra init"
+      "下一步: notra init --yes"
     ].join("\n");
   }
 
@@ -186,7 +210,8 @@ export function buildFinishNextSteps(
 ): string[] {
   const mode = (crystallize as { mode?: string }).mode;
   if (mode === "no-knowledge") {
-    return ["notra init"];
+    // 带 --yes：nextSteps 会被 agent 逐字执行，裸 notra init 在 TTY 下会停在交互提示
+    return ["notra init --yes"];
   }
 
   const steps: string[] = [];
@@ -347,5 +372,9 @@ export function formatUpdateSummary(result: Record<string, any>): string {
   }
   lines.push("");
   lines.push(result.message ?? "");
+  // 升级只换掉全局包，各项目 .notra/plugin 下的运行时副本仍是旧版
+  if (result.mode === "updated") {
+    lines.push("", "下一步: 在每个使用 notra 的项目里运行 notra init --yes 刷新 .notra/plugin 运行时");
+  }
   return lines.join("\n");
 }

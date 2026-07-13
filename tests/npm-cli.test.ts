@@ -10,6 +10,11 @@ import {
   installNotraPlatforms,
   normalizePlatforms
 } from "../dist/core/platform/install.js";
+import {
+  readRuntimeManifest,
+  removeRuntimeManifest,
+  simulatePreviousInstall
+} from "./runtime-manifest-fixture.ts";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(".");
@@ -59,20 +64,22 @@ test("installNotraPlatforms dry-run reports writes without touching disk", async
   assert.equal(await exists(path.join(projectRoot, ".claude")), false);
 });
 
-test("installNotraPlatforms handles conflicting files with skip-existing or force", async () => {
+test("installNotraPlatforms preserves user-edited platform skills instead of overwriting them", async () => {
   const projectRoot = await createTempProject();
   const skillPath = path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md");
   await fs.mkdir(path.dirname(skillPath), { recursive: true });
   await fs.writeFile(skillPath, "custom skill", "utf8");
 
-  await assert.rejects(
-    installNotraPlatforms({
-      projectRoot,
-      packageRoot: root,
-      platforms: ["agents"]
-    }),
-    /目标文件已存在且内容不同/
+  const preserved = await installNotraPlatforms({
+    projectRoot,
+    packageRoot: root,
+    platforms: ["agents"]
+  });
+  assert.equal(
+    preserved.skipped.some((item) => item.path === skillPath && item.reason === "diverged"),
+    true
   );
+  assert.equal(await fs.readFile(skillPath, "utf8"), "custom skill");
 
   const skipped = await installNotraPlatforms({
     projectRoot,
@@ -90,6 +97,156 @@ test("installNotraPlatforms handles conflicting files with skip-existing or forc
     force: true
   });
   assert.match(await fs.readFile(skillPath, "utf8"), /node \.notra\/plugin\/scripts\/notra-init\.mjs/);
+});
+
+test("installNotraPlatforms refreshes files it wrote itself when the source moved on", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  // manifest 记下这份旧内容出自 notra，因此它是版本陈旧而非用户改动
+  const runtimeRelative = path.join(".notra", "plugin", "scripts", "shared.mjs");
+  const skillRelative = path.join(".agents", "skills", "notra-init", "SKILL.md");
+  await simulatePreviousInstall(projectRoot, runtimeRelative, "// v0.1.0 的 runtime");
+  await simulatePreviousInstall(projectRoot, skillRelative, "# v0.1.0 的 skill");
+
+  const refreshed = await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  for (const relative of [runtimeRelative, skillRelative]) {
+    const target = path.join(projectRoot, relative);
+    assert.equal(
+      refreshed.writes.some((item) => item.path === target && item.action === "overwrite"),
+      true,
+      `${relative} 应被刷新`
+    );
+  }
+  assert.equal(
+    await fs.readFile(path.join(projectRoot, runtimeRelative), "utf8"),
+    await fs.readFile(path.join(root, "plugins", "notra", "scripts", "shared.mjs"), "utf8")
+  );
+});
+
+test("installNotraPlatforms keeps a file the user edited after notra wrote it", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  // 只改文件、不动 manifest：哈希对不上记录，说明是用户改的
+  const runtimeScript = path.join(projectRoot, ".notra", "plugin", "scripts", "shared.mjs");
+  const skillPath = path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md");
+  await fs.writeFile(runtimeScript, "// 我打的本地补丁", "utf8");
+  await fs.writeFile(skillPath, "# 我改过的 skill", "utf8");
+
+  const result = await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  assert.equal(result.skipped.some((item) => item.path === runtimeScript && item.reason === "diverged"), true);
+  assert.equal(result.skipped.some((item) => item.path === skillPath && item.reason === "diverged"), true);
+  assert.equal(await fs.readFile(runtimeScript, "utf8"), "// 我打的本地补丁");
+  assert.equal(await fs.readFile(skillPath, "utf8"), "# 我改过的 skill");
+});
+
+test("installNotraPlatforms refreshes a legacy install that predates the manifest", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  const runtimeScript = path.join(projectRoot, ".notra", "plugin", "scripts", "shared.mjs");
+  const skillPath = path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md");
+  await fs.writeFile(runtimeScript, "// 旧版 runtime", "utf8");
+  await fs.writeFile(skillPath, "# 旧版 skill", "utf8");
+  await removeRuntimeManifest(projectRoot);
+
+  const result = await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  // 没有 manifest 时按地界猜：runtime 是 vendored 产物直接刷新，skill 在用户地界保守保留
+  assert.equal(result.writes.some((item) => item.path === runtimeScript && item.action === "overwrite"), true);
+  assert.equal(result.skipped.some((item) => item.path === skillPath && item.reason === "diverged"), true);
+});
+
+test("installNotraPlatforms refuses to run against a corrupt manifest", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  // 静默退回 legacy 会把用户对 runtime 的改动当成陈旧副本覆盖掉，所以损坏必须报错而不是降级
+  const manifestPath = path.join(projectRoot, ".notra", "plugin", ".manifest.json");
+  await fs.writeFile(manifestPath, "{ 截断的 JSON", "utf8");
+  const runtimeScript = path.join(projectRoot, ".notra", "plugin", "scripts", "shared.mjs");
+  await fs.writeFile(runtimeScript, "// 我的补丁", "utf8");
+
+  await assert.rejects(
+    installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] }),
+    /运行时清单已损坏/
+  );
+  assert.equal(await fs.readFile(runtimeScript, "utf8"), "// 我的补丁");
+});
+
+test("installNotraPlatforms records a manifest covering runtime and skill files", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  const manifest = await readRuntimeManifest(projectRoot);
+
+  assert.equal(typeof manifest.notraVersion, "string");
+  assert.equal(manifest.files[path.join(".notra", "plugin", "scripts", "shared.mjs")]?.length, 64);
+  assert.equal(manifest.files[path.join(".agents", "skills", "notra-init", "SKILL.md")]?.length, 64);
+});
+
+test("installNotraPlatforms does not write a manifest during dry-run", async () => {
+  const projectRoot = await createTempProject();
+
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"], dryRun: true });
+
+  assert.equal(await exists(path.join(projectRoot, ".notra")), false);
+});
+
+test("installNotraPlatforms lets skip-existing win over runtime refresh", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  const runtimeRelative = path.join(".notra", "plugin", "scripts", "shared.mjs");
+  await simulatePreviousInstall(projectRoot, runtimeRelative, "// 旧版 runtime");
+  const runtimeScript = path.join(projectRoot, runtimeRelative);
+
+  const result = await installNotraPlatforms({
+    projectRoot,
+    packageRoot: root,
+    platforms: ["agents"],
+    skipExisting: true
+  });
+
+  assert.equal(result.skipped.some((item) => item.path === runtimeScript && item.reason === "exists"), true);
+  assert.equal(await fs.readFile(runtimeScript, "utf8"), "// 旧版 runtime");
+});
+
+test("installNotraPlatforms can still refresh a runtime that skip-existing left behind", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  const runtimeRelative = path.join(".notra", "plugin", "scripts", "shared.mjs");
+  await simulatePreviousInstall(projectRoot, runtimeRelative, "// 旧版 runtime");
+  const runtimeScript = path.join(projectRoot, runtimeRelative);
+
+  // 跳过写入时若把「本次想写的新版哈希」记进 manifest，磁盘上的旧内容下次就会被误判成用户改动
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"], skipExisting: true });
+  const refreshed = await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  assert.equal(refreshed.writes.some((item) => item.path === runtimeScript && item.action === "overwrite"), true);
+  assert.equal(
+    await fs.readFile(runtimeScript, "utf8"),
+    await fs.readFile(path.join(root, "plugins", "notra", "scripts", "shared.mjs"), "utf8")
+  );
+});
+
+test("installNotraPlatforms keeps protecting a user edit across repeated installs", async () => {
+  const projectRoot = await createTempProject();
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  const skillPath = path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md");
+  await fs.writeFile(skillPath, "# 我的定制", "utf8");
+
+  // 跳过写入时若改记「磁盘现有内容」的哈希，用户改动会在下一轮被认作 notra 自己的文件而遭覆盖
+  await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+  const second = await installNotraPlatforms({ projectRoot, packageRoot: root, platforms: ["agents"] });
+
+  assert.equal(second.skipped.some((item) => item.path === skillPath && item.reason === "diverged"), true);
+  assert.equal(await fs.readFile(skillPath, "utf8"), "# 我的定制");
 });
 
 test("notra CLI exposes version and platform-only init", async () => {
@@ -126,6 +283,42 @@ test("notra CLI one-shot init initializes platform and project knowledge", async
   assert.match(init.stdout, /知识库:/);
   assert.equal(await exists(path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md")), true);
   assert.equal(await exists(path.join(projectRoot, ".notra", "project-profile.md")), true);
+});
+
+test("notra CLI init is re-entrant on a legacy install with a stale runtime", async () => {
+  const projectRoot = await createSampleProject();
+  await execFileAsync(process.execPath, [cliPath, "init", "--yes", "--project-root", projectRoot]);
+
+  // 复刻真实仓库的状态：manifest 出现之前装的项目，runtime 已陈旧；另留一段用户手写的知识库内容
+  const runtimeScript = path.join(projectRoot, ".notra", "plugin", "scripts", "shared.mjs");
+  const profilePath = path.join(projectRoot, ".notra", "project-profile.md");
+  await fs.writeFile(runtimeScript, "// 上一个 notra 版本留下的 runtime", "utf8");
+  await removeRuntimeManifest(projectRoot);
+  await fs.appendFile(profilePath, "\n用户手写的项目画像补充\n", "utf8");
+
+  const init = await execFileAsync(process.execPath, [cliPath, "init", "--yes", "--project-root", projectRoot]);
+
+  assert.match(init.stdout, /刷新运行时/);
+  assert.equal(
+    await fs.readFile(runtimeScript, "utf8"),
+    await fs.readFile(path.join(root, "plugins", "notra", "scripts", "shared.mjs"), "utf8")
+  );
+  assert.match(await fs.readFile(profilePath, "utf8"), /用户手写的项目画像补充/);
+});
+
+test("notra CLI init never labels an overwritten user skill as a runtime refresh", async () => {
+  const projectRoot = await createSampleProject();
+  await execFileAsync(process.execPath, [cliPath, "init", "--yes", "--platform-only", "--project-root", projectRoot]);
+
+  const skillPath = path.join(projectRoot, ".agents", "skills", "notra-init", "SKILL.md");
+  await fs.writeFile(skillPath, "# 我改过的 skill", "utf8");
+
+  const forced = await execFileAsync(process.execPath, [
+    cliPath, "init", "--yes", "--platform-only", "--force", "--project-root", projectRoot
+  ]);
+
+  assert.doesNotMatch(forced.stdout, /刷新运行时/);
+  assert.match(forced.stdout, /刷新 skill: 1 个文件/);
 });
 
 test("notra CLI init supports json and dry-run", async () => {
